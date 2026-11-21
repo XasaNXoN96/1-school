@@ -277,11 +277,45 @@ const bd = (add, year) => { const x = new Date(Date.now() + add * 86400000); ret
 [['teacher2', 2, 1990], ['teacher3', 5, 1988], ['teacher5', 11, 1985], ['teacher1', 20, 1983], ['teacher4', 40, 1992]].forEach(([u, add, y]) => db.prepare('UPDATE users SET birthday=? WHERE username=?').run(bd(add, y), u));
 
 const au = db.prepare("INSERT INTO audit_log (user_id, user_name, action, target, created_at) VALUES (?,?,?,?,datetime('now', ?))");
-[['Директор (демо)', 'добавил(а)/изменил(а)', 'Новости', '-35 minutes'], ['Директор (демо)', 'добавил(а)/изменил(а)', 'Поручения', '-2 hours'], ['Ассистент (демо)', 'добавил(а)/изменил(а)', 'Календарь', '-5 hours'],
+[['Директор (демо)', 'добавил(а)/изменил(а)', 'Новости', '-35 minutes'], ['Директор (демо)', 'добавил(а)/изменил(а)', 'Поручения', '-2 hours'], ['Ассистент (демо)', 'добавил(а)/изменил(а)', 'Календарь', '08:47'],
   ['Директор (демо)', 'изменил(а)', 'Настройки', '-1 day'], ['Директор (демо)', 'добавил(а)/изменил(а)', 'Объявления', '-1 day'], ['Ассистент (демо)', 'отметил(а)', 'Заявки', '-2 days'],
   ['Директор (демо)', 'сменил(а) пароль', 'Сотрудники', '-3 days'], ['Директор (демо)', 'удалил(а)', 'Медиа', '-4 days'], ['Директор (демо)', 'скачал(а) резервную копию', 'База данных', '-6 days']]
   .reverse().forEach(([n, a, t, ago]) => au.run(1, n, a, t, ago));
 const annIds = db.prepare('SELECT id FROM announcements').all().map((r) => r.id);
 const rd = db.prepare('INSERT OR IGNORE INTO announcement_reads (announcement_id, user_id) VALUES (?,?)');
 annIds.forEach((id, i) => [T.t1, T.t2, T.t3, T.t4].slice(0, 4 - (i % 3)).forEach((uid) => rd.run(id, uid)));
+
+// ---- Проверка по лицу и геозоне (демо: «отпечатки» случайные — настоящие лица добавляются в панели) ----
+const { execFileSync } = require('node:child_process');
+setSetting(db, 'face_required', '1');
+const todayLocal = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(new Date());
+const yesterdayLocal = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(new Date(Date.now() - 86400000));
+const thumbOf = (userId, flop) => {
+  try {
+    const f = db.prepare('SELECT photo FROM users WHERE id=?').get(userId).photo; if (!f) return null;
+    return execFileSync('convert', [path.join(upDir, f), '-resize', 'x96^', '-gravity', 'center', '-crop', '128x96+0+0', '+repage', ...(flop ? ['-flop'] : []), '-quality', '60', 'jpeg:-'], { maxBuffer: 1 << 20 });
+  } catch { return null; }
+};
+let rnd = 7; const rand = () => { rnd = (rnd * 16807) % 2147483647; return rnd / 2147483647; };
+const fs1 = db.prepare('INSERT INTO face_samples (user_id, descriptor, thumb, created_by, created_at) VALUES (?,?,?,?,datetime(\'now\', ?))');
+for (const uid of [T.t1, T.t2, T.t3, T.t4, T.t5, T.t6]) {
+  for (let k = 0; k < 2; k++) fs1.run(uid, Buffer.from(new Float32Array(Array.from({ length: 128 }, () => rand() - 0.5)).buffer), thumbOf(uid, k === 1), 1, `-${6 + k} days`);
+}
+fs1.run(T.t7, Buffer.from(new Float32Array(Array.from({ length: 128 }, () => rand() - 0.5)).buffer), thumbOf(T.t7), 1, '-2 days');
+const ca = db.prepare(`INSERT INTO checkin_attempts (user_id,date,kind,status,reason,message,via,lat,lon,accuracy,distance,zone_ok,face_ok,live_ok,face_distance,other_distance,other_user,challenges,details,thumb,reviewed_by,reviewed_at,review_note,created_at)
+  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+const utc = (day, hhmm) => new Date(`${day}T${hhmm}:00+05:00`).toISOString().replace('T', ' ').slice(0, 19);
+const mt = (e, m, y) => JSON.stringify({ metrics: { neutral: { earLeft: 0.3, earRight: 0.3, mouth: 0.38, yaw: 0.5 }, frames: [{ earLeft: e, earRight: 0.3, mouth: m, yaw: y }, { earLeft: 0.3, earRight: 0.3, mouth: 0.42, yaw: 0.5 }], score: 0.91 } });
+const A = (u, d, kind, st, reason, msgText, via, dist, acc, fd, od, ou, ch, live, details, thumbUser, ago, rev) => ca.run(u, d, kind, st, reason, msgText, via, 40.1 + (dist || 0) / 111000, 67.84, acc, dist, dist != null && dist <= 150 ? 1 : 0, fd == null ? null : (st === 'rejected' && (reason === 'face_mismatch' || reason === 'other_person') ? 0 : 1), live, fd, od, ou || '', ch, details || '{}', thumbOf(thumbUser), rev ? 1 : null, rev ? new Date().toISOString().replace('T', ' ').slice(0, 19) : null, rev || '', utc(d, ago));
+A(T.t1, yesterdayLocal, 'in', 'ok', '', 'Приход отмечен в 08:49', 'web', 29, 10, 0.3, 0.6, 'Malika Yusupova', 'smile,wink_right', 1, '{}', T.t1, '08:49');
+A(T.t1, yesterdayLocal, 'out', 'ok', '', 'Уход отмечен в 14:03', 'web', 35, 11, 0.31, 0.6, 'Malika Yusupova', 'wink_left,turn_left', 1, '{}', T.t1, '14:03');
+A(T.t3, yesterdayLocal, 'in', 'rejected', 'rejected_by_admin', 'Отклонено директором', 'telegram', 70, 20, 0.53, 0.55, 'Dilnoza Rahimova', 'turn_left,smile', 1, '{}', T.t3, '09:20', 'Это не она — проверила лично');
+A(T.t7, todayLocal, 'in', 'ok', '', 'Приход отмечен в 08:47', 'telegram', 31, 14, 0.27, 0.58, 'Bobur Tursunov', 'wink_right,smile', 1, mt(0.3, 0.46, 0.5), T.t7, '08:47');
+A(T.t1, todayLocal, 'in', 'ok', '', 'Приход отмечен в 08:52', 'telegram', 38, 12, 0.28, 0.61, 'Malika Yusupova', 'wink_left,smile', 1, mt(0.12, 0.46, 0.5), T.t1, '08:52');
+A(T.t2, todayLocal, 'in', 'ok', '', 'Приход отмечен в 08:58', 'telegram', 61, 22, 0.33, 0.55, 'Nigora Abdullayeva', 'turn_right,wink_right', 1, mt(0.3, 0.4, 0.3), T.t2, '08:58');
+A(T.t3, todayLocal, 'in', 'pending', 'face_review', 'Приход отмечен в 09:14. Отметка принята условно: директор проверит совпадение лица.', 'telegram', 74, 25, 0.51, 0.57, 'Dilnoza Rahimova', 'smile,turn_left', 1, mt(0.3, 0.45, 0.66), T.t3, '09:14');
+A(T.t4, todayLocal, 'in', 'rejected', 'outside_zone', 'Отметка не принята — вы вне зоны школы: до школы 412 м, допустимо 150 м.', 'telegram', 412, 18, 0.3, 0.6, 'Sardor Qodirov', 'wink_left,turn_right', 1, mt(0.1, 0.38, 0.5), T.t4, '09:20');
+A(T.t5, todayLocal, 'in', 'rejected', 'other_person', 'Отметка не принята — лицо похоже на другого сотрудника.', 'telegram', 52, 16, 0.62, 0.38, 'Malika Yusupova', 'smile,wink_left', 1, mt(0.12, 0.46, 0.5), T.t3, '09:31');
+A(T.t6, todayLocal, 'in', 'rejected', 'liveness_failed', 'Отметка не принята — не выполнено задание на «живость».', 'telegram', 45, 20, 0.27, 0.62, 'Nigora Abdullayeva', 'smile,turn_left', 0, mt(0.3, 0.39, 0.5), T.t6, '09:40');
+A(T.t6, todayLocal, 'in', 'ok', '', 'Приход отмечен в 09:50. ⚠️ Опоздание на 50 мин — директор уведомлён.', 'telegram', 40, 15, 0.29, 0.6, 'Nigora Abdullayeva', 'turn_left,wink_right', 1, mt(0.3, 0.41, 0.7), T.t6, '09:50');
 console.log(`Готово. Демо-вход: director / ${PASSWORD}`);

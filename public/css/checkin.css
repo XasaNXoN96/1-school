@@ -1,0 +1,50 @@
+/* Страница «Отметка по лицу»: открывается как Telegram Mini App и в обычном браузере. Мобильный экран — основной. */
+html, body { margin: 0; background: var(--color-bg); color: var(--color-text); font-family: var(--font-body); -webkit-text-size-adjust: 100%; }
+.ck { max-width: 520px; margin: 0 auto; padding: 14px 14px calc(18px + env(safe-area-inset-bottom)); min-height: 100vh; box-sizing: border-box; display: flex; flex-direction: column; gap: 12px; }
+.ck * { box-sizing: border-box; }
+.ck-head { display: flex; align-items: center; gap: 12px; }
+.ck-head img { width: 40px; height: 40px; }
+.ck-head b { display: block; font-size: 1.02rem; }
+.ck-head small { color: var(--color-muted); }
+.ck-head .sp { flex: 1; }
+.ck-lang { display: flex; gap: 4px; }
+.ck-lang button { border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-text); border-radius: 8px; padding: 4px 8px; font-size: .78rem; }
+.ck-lang button.on { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
+.ck-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; }
+.ck-card h1 { margin: 0 0 6px; font-size: 1.25rem; font-family: var(--font-heading); }
+.ck-card p { margin: 6px 0; color: var(--color-muted); line-height: 1.45; }
+.ck-kind { display: inline-flex; align-items: center; gap: 6px; padding: 3px 12px; border-radius: 99px; background: #e7efff; color: var(--color-primary); font-weight: 600; font-size: .88rem; }
+.ck-steps { display: flex; gap: 6px; margin: 2px 0 4px; }
+.ck-steps i { flex: 1; height: 6px; border-radius: 99px; background: var(--color-border); transition: background .25s; }
+.ck-steps i.done { background: var(--color-ok); } .ck-steps i.now { background: var(--color-accent); }
+.ck-btn { appearance: none; border: 0; border-radius: 14px; padding: 15px 18px; font-size: 1.05rem; font-weight: 700; width: 100%; background: var(--color-primary); color: #fff; cursor: pointer; display: flex; justify-content: center; gap: 8px; align-items: center; }
+.ck-btn.sec { background: #eaf0fb; color: var(--color-primary); } .ck-btn[disabled] { opacity: .55; }
+.ck-btn.demo { background: #fff; color: var(--color-text); border: 1px solid var(--color-border); text-align: left; justify-content: flex-start; font-weight: 600; font-size: .95rem; padding: 12px 14px; }
+.ck-cam { position: relative; width: 100%; aspect-ratio: 3/4; max-height: 62vh; background: #0b1220; border-radius: 20px; overflow: hidden; }
+.ck-cam video, .ck-cam .sim { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+.ck-cam .sim { transform: none; display: grid; place-items: center; background: radial-gradient(circle at 50% 40%, #27406f, #0b1220 70%); }
+.ck-guide { position: absolute; left: 50%; top: 46%; width: 62%; aspect-ratio: 3/4; transform: translate(-50%, -50%); border: 3px dashed rgba(255,255,255,.7); border-radius: 50%; transition: border-color .2s, box-shadow .2s; pointer-events: none; }
+.ck-guide.ok { border-style: solid; border-color: #4ade80; box-shadow: 0 0 0 4px rgba(74,222,128,.28); }
+.ck-guide.bad { border-color: #fbbf24; }
+.ck-prompt { position: absolute; left: 10px; right: 10px; bottom: 10px; background: rgba(8,16,36,.82); color: #fff; border-radius: 16px; padding: 10px 12px; display: flex; align-items: center; gap: 12px; backdrop-filter: blur(4px); }
+.ck-prompt svg { width: 56px; height: 56px; flex: none; }
+.ck-prompt b { display: block; font-size: 1.05rem; line-height: 1.25; }
+.ck-prompt small { opacity: .8; }
+.ck-timer { position: absolute; top: 10px; right: 10px; background: rgba(8,16,36,.7); color: #fff; padding: 3px 10px; border-radius: 99px; font-size: .8rem; font-variant-numeric: tabular-nums; }
+.ck-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ck-chip { font-size: .82rem; padding: 4px 10px; border-radius: 99px; background: #eef3fb; border: 1px solid var(--color-border); }
+.ck-chip.ok { background: #e6f4ea; color: #1f6b2d; border-color: #b7dfc0; } .ck-chip.bad { background: #fdecea; color: #b3261e; border-color: #f4b9b4; } .ck-chip.warn { background: #fff4e0; color: #8a5a00; border-color: #f2d49b; }
+.ck-err { background: #fdecea; color: #b3261e; border: 1px solid #f4b9b4; border-radius: 12px; padding: 10px 12px; }
+.ck-spin { width: 44px; height: 44px; border-radius: 50%; border: 5px solid #dbe5f6; border-top-color: var(--color-primary); animation: ckspin 1s linear infinite; margin: 8px auto; }
+@keyframes ckspin { to { transform: rotate(360deg); } }
+.ck-res { text-align: center; }
+.ck-res .big { width: 84px; height: 84px; border-radius: 50%; display: grid; place-items: center; margin: 4px auto 10px; font-size: 2.6rem; color: #fff; }
+.ck-res .big.ok { background: #2e9e62; } .ck-res .big.pending { background: #e8a30f; } .ck-res .big.rejected { background: #d6473d; }
+.ck-rows { text-align: left; margin-top: 12px; display: grid; gap: 8px; }
+.ck-row { display: grid; grid-template-columns: 30px 1fr; gap: 10px; align-items: start; padding: 10px 12px; border-radius: 12px; background: #f6f9ff; border: 1px solid var(--color-border); }
+.ck-row .ic { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 800; }
+.ck-row.ok .ic { background: #2e9e62; } .ck-row.bad .ic { background: #d6473d; } .ck-row.warn .ic { background: #e8a30f; } .ck-row.skip .ic { background: #9aa8c0; }
+.ck-row b { display: block; } .ck-row span { color: var(--color-muted); font-size: .9rem; }
+.ck-foot { color: var(--color-muted); font-size: .78rem; text-align: center; margin-top: auto; }
+[data-theme=dark] .ck-chip, [data-theme=dark] .ck-row { background: #16223a; }
+@media (prefers-reduced-motion: reduce) { .ck-spin { animation-duration: 3s; } }

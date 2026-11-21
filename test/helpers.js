@@ -4,9 +4,9 @@ const os = require('node:os');
 const path = require('node:path');
 const { createApp } = require('../server/app');
 
-async function startTestApp() {
+async function startTestApp(opts = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'school-'));
-  const app = createApp({ dbFile: ':memory:', dataDir, publicDir: path.join(__dirname, '..', 'public') });
+  const app = createApp({ dbFile: ':memory:', dataDir, publicDir: path.join(__dirname, '..', 'public'), ...opts });
   await new Promise((r) => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
 

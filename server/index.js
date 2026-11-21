@@ -17,6 +17,8 @@ const { createBot, telegramApi } = require('./bot');
 const port = Number(process.env.PORT || 3000);
 const dataDir = path.resolve(process.env.DATA_DIR || path.join(__dirname, '..', 'data'));
 const { server, db, notifier } = createApp({
+  botToken: process.env.TELEGRAM_BOT_TOKEN || '',
+  publicUrl: process.env.PUBLIC_URL || '',
   dbFile: path.join(dataDir, 'school.db'),
   dataDir,
   publicDir: path.join(__dirname, '..', 'public'),
@@ -27,7 +29,7 @@ const token = process.env.TELEGRAM_BOT_TOKEN;
 let bot = null;
 if (token) {
   const api = telegramApi(token);
-  bot = createBot({ db, notifier, api });
+  bot = createBot({ db, notifier, api, publicUrl: process.env.PUBLIC_URL });
   notifier.setTransport((chatId, text) => api.sendMessage(chatId, text));
   bot.startPolling();
   console.log('Telegram-бот запущен');

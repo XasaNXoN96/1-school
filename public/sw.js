@@ -8,7 +8,7 @@ self.addEventListener('fetch', (e) => {
   const req = e.request, url = new URL(req.url);
   if (req.method !== 'GET' || url.origin !== location.origin) return;
   // панель и личные данные — только из сети
-  if (url.pathname.startsWith('/panel') || (url.pathname.startsWith('/api/') && !url.pathname.startsWith('/api/public/'))) return;
+  if (url.pathname.startsWith('/panel') || url.pathname.startsWith('/checkin') || (url.pathname.startsWith('/api/') && !url.pathname.startsWith('/api/public/'))) return;
   e.respondWith(fetch(req).then((res) => {
     if (res.ok && !url.pathname.startsWith('/api/backup')) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); }
     return res;

@@ -1,15 +1,16 @@
 import { T, h, api, icon, state, isManager, readForm, field, guard } from './ui.js';
 import { views } from './views.js';
 import './views2.js';
+import './views3.js';
 import { lang, setLang, LANGS } from '/js/i18n.js';
 
 const app = document.getElementById('app');
 const logo = (size = 44) => h('img', { src: '/img/logo.svg', alt: '', width: size, height: size });
 
 const MENU_MANAGER = [['dashboard', 'Главная', 'home'], ['stats', 'Статистика', 'trend'], ['users', 'Пользователи', 'users'], ['calendar', 'Календарь', 'calendar'], ['applications', 'Заявки с сайта', 'mail'], ['lessons', 'Расписание уроков', 'clock'], ['tasks', 'Поручения', 'clipboard'], ['students', 'Ученики', 'cap'],
-  ['news', 'Новости', 'news'], ['announcements', 'Объявления', 'megaphone'], ['media', 'Медиа (фото/видео)', 'image'], ['pages', 'О школе', 'book'], ['achievements', 'Достижения', 'trophy'], ['reports', 'Отчёты', 'chart'], ['faq', 'Вопросы и ответы', 'help'], ['audit', 'Журнал действий', 'shield'], ['settings', 'Настройки', 'settings']];
+  ['news', 'Новости', 'news'], ['announcements', 'Объявления', 'megaphone'], ['media', 'Медиа (фото/видео)', 'image'], ['pages', 'О школе', 'book'], ['achievements', 'Достижения', 'trophy'], ['reports', 'Отчёты', 'chart'], ['faq', 'Вопросы и ответы', 'help'], ['faceid', 'Проверка по лицу', 'camera'], ['audit', 'Журнал действий', 'shield'], ['settings', 'Настройки', 'settings']];
 const MENU_STAFF = [['dashboard', 'Главная', 'home'], ['lessons', 'Мои уроки', 'book'], ['calendar', 'Календарь', 'calendar'], ['tasks', 'Задания', 'clipboard'], ['students', 'Ученики', 'cap'], ['achievements', 'Достижения', 'trophy'],
-  ['attendance', 'Посещаемость', 'check'], ['salary', 'Зарплата', 'chart'], ['messages', 'Сообщения', 'mail'], ['announcements', 'Объявления', 'megaphone'], ['plans', 'Мои планы', 'clock'], ['profile', 'Профиль', 'user']];
+  ['attendance', 'Посещаемость', 'check'], ['mycheck', 'Моя отметка', 'camera'], ['salary', 'Зарплата', 'chart'], ['messages', 'Сообщения', 'mail'], ['announcements', 'Объявления', 'megaphone'], ['plans', 'Мои планы', 'clock'], ['profile', 'Профиль', 'user']];
 
 const roleLabel = (r) => ({ director: T('Администратор'), assistant: T('Ассистент'), teacher: T('Учитель'), staff: T('Сотрудник') }[r]);
 const GREET = { uz: 'Assalomu alaykum', ru: 'Здравствуйте', en: 'Hello' };

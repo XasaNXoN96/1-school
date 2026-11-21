@@ -43,13 +43,25 @@ const KB = {
   },
 };
 
-function createBot({ db, notifier, api, now = () => new Date() }) {
+function createBot({ db, notifier, api, now = () => new Date(), publicUrl = '' }) {
+  const base = String(publicUrl || '').replace(/\/+$/, '');
+  const canMiniApp = /^https:\/\//i.test(base);
   const pending = new Map(); // telegram_id -> { action, at }
   let stopped = false, abort = null;
 
   const userByTg = (id) => db.prepare('SELECT * FROM users WHERE telegram_id = ? AND active = 1 AND frozen = 0').get(String(id));
 
   async function reply(chatId, text, extra) { return api.sendMessage(chatId, text, extra); }
+
+  // Отметка по лицу: Telegram Mini App (web_app) — личность подтверждается подписью Telegram, место и лицо — на сервере.
+  function faceMarkReply(chatId, kind, manager) {
+    if (!canMiniApp) {
+      return reply(chatId, 'Отметка по лицу требует безопасного адреса сайта (https). Сообщите директору: не задан PUBLIC_URL.', KB.main(manager));
+    }
+    const label = kind === 'in' ? '📷 Отметить приход' : '📷 Отметить уход';
+    return reply(chatId, 'Нажмите кнопку: откроется камера. Нужно будет посмотреть в камеру и выполнить два простых задания (например, закрыть левый глаз или улыбнуться). Геолокация проверяется автоматически.',
+      { reply_markup: { inline_keyboard: [[{ text: label, web_app: { url: `${base}/checkin?kind=${kind}` } }]] } });
+  }
 
   function link(chatId, codeRaw) {
     const code = String(codeRaw || '').trim().toUpperCase();
@@ -128,6 +140,9 @@ function createBot({ db, notifier, api, now = () => new Date() }) {
     if (msg.location) {
       const p = pending.get(String(chatId));
       pending.delete(String(chatId));
+      // При включённой проверке по лицу обычная геолокация отметку НЕ засчитывает: её можно подделать или переслать.
+      if (getSettings(db).face_required === '1') return faceMarkReply(chatId, p?.action === 'out' ? 'out' : 'in', isManager(u));
+      if (msg.date && Math.abs(now().getTime() / 1000 - msg.date) > 180) return reply(chatId, 'Геолокация устарела. Отправьте текущую.', KB.main(isManager(u)));
       if (msg.forward_origin || msg.forward_date) return reply(chatId, 'Пересланная геолокация не принимается. Отправьте свою текущую.', KB.main(isManager(u)));
       if (!p || now().getTime() - p.at > PENDING_TTL_MS) {
         return reply(chatId, 'Сначала нажмите «Пришёл» или «Ушёл».', KB.main(isManager(u)));
@@ -138,8 +153,8 @@ function createBot({ db, notifier, api, now = () => new Date() }) {
     }
 
     switch (text) {
-      case '✅ Пришёл': pending.set(String(chatId), { action: 'in', at: now().getTime() }); return reply(chatId, 'Отправьте геолокацию кнопкой ниже.', KB.askLocation);
-      case '🏁 Ушёл': pending.set(String(chatId), { action: 'out', at: now().getTime() }); return reply(chatId, 'Отправьте геолокацию кнопкой ниже.', KB.askLocation);
+      case '✅ Пришёл': if (getSettings(db).face_required === '1') return faceMarkReply(chatId, 'in', isManager(u)); pending.set(String(chatId), { action: 'in', at: now().getTime() }); return reply(chatId, 'Отправьте геолокацию кнопкой ниже.', KB.askLocation);
+      case '🏁 Ушёл': if (getSettings(db).face_required === '1') return faceMarkReply(chatId, 'out', isManager(u)); pending.set(String(chatId), { action: 'out', at: now().getTime() }); return reply(chatId, 'Отправьте геолокацию кнопкой ниже.', KB.askLocation);
       case '❌ Отмена': pending.delete(String(chatId)); return reply(chatId, 'Отменено.', KB.main(isManager(u)));
       case '📊 Зарплата': return reply(chatId, salaryText(u), KB.main(isManager(u)));
       case '📚 Уроки сегодня': return reply(chatId, lessonsText(u), KB.main(isManager(u)));

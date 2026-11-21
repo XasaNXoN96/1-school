@@ -166,3 +166,15 @@ h2.sec { margin: 22px 0 12px; color: var(--color-primary-dark); }
 
 .bell, .burger, .lang-btn { flex: none; }
 .hello { min-width: 0; }
+
+/* Проверка по лицу */
+.ck-list { display: grid; gap: 10px; }
+.ck-item { display: flex; gap: 12px; padding: 12px; border-radius: 14px; border: 1px solid var(--color-border); background: var(--color-surface); border-left: 5px solid #2e9e62; }
+.ck-item.st-pending { border-left-color: #e8a30f; background: #fffaf0; } .ck-item.st-rejected { border-left-color: #d6473d; background: #fff7f6; }
+.ck-th { width: 64px; height: 48px; border-radius: 10px; object-fit: cover; flex: none; background: #e7efff; display: grid; place-items: center; font-weight: 700; color: var(--color-primary); }
+.ck-main { flex: 1; min-width: 0; }
+.ck-det summary { cursor: pointer; color: var(--color-primary); font-size: .85rem; margin-top: 6px; }
+.ck-sample { position: relative; } .ck-sample img { width: 96px; height: 72px; object-fit: cover; border-radius: 10px; display: block; } .ck-sample button { position: absolute; right: 4px; top: 4px; padding: 3px 6px; }
+.live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #2e9e62; margin-right: 6px; animation: blinkdot 1.6s infinite; }
+@keyframes blinkdot { 50% { opacity: .25; } }
+[data-theme=dark] .ck-item.st-pending { background: #2a2414; } [data-theme=dark] .ck-item.st-rejected { background: #2b1a19; }

@@ -227,6 +227,49 @@ CREATE INDEX IF NOT EXISTS idx_lessons_teacher ON lessons(teacher_id, weekday);
 CREATE INDEX IF NOT EXISTS idx_plans_user ON plans(user_id, date);
 CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(date);
 CREATE INDEX IF NOT EXISTS idx_notices_user ON notices(user_id, read);
+
+-- Эталонные лица сотрудников: только числовой «отпечаток» (128 чисел) и маленькая миниатюра для администратора.
+CREATE TABLE IF NOT EXISTS face_samples (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  descriptor BLOB NOT NULL,
+  thumb BLOB,
+  created_by INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_face_samples_user ON face_samples(user_id);
+
+-- Одноразовые сессии проверки: что именно должен сделать человек (случайные задания) и до какого времени.
+CREATE TABLE IF NOT EXISTS checkin_sessions (
+  token_hash TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  challenges TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  used INTEGER NOT NULL DEFAULT 0
+);
+
+-- Журнал каждой попытки отметки (успешной и нет) с доказательствами.
+CREATE TABLE IF NOT EXISTS checkin_attempts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  date TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('in','out')),
+  status TEXT NOT NULL CHECK (status IN ('ok','pending','rejected')),
+  reason TEXT NOT NULL DEFAULT '',
+  message TEXT NOT NULL DEFAULT '',
+  via TEXT NOT NULL DEFAULT 'web',
+  lat REAL, lon REAL, accuracy REAL, distance INTEGER,
+  zone_ok INTEGER, face_ok INTEGER, live_ok INTEGER,
+  face_distance REAL, other_distance REAL, other_user TEXT NOT NULL DEFAULT '',
+  challenges TEXT NOT NULL DEFAULT '', details TEXT NOT NULL DEFAULT '',
+  thumb BLOB,
+  reviewed_by INTEGER, reviewed_at TEXT, review_note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_attempts_user ON checkin_attempts(user_id, id);
+CREATE INDEX IF NOT EXISTS idx_attempts_date ON checkin_attempts(date);
 `;
 
 // school_lat / school_lon пустые, пока директор не укажет координаты школы в настройках.
@@ -250,6 +293,11 @@ const DEFAULT_SETTINGS = {
   grace_minutes: '10',
   timezone: 'Asia/Tashkent',
   work_hours: '',      // режим работы для сайта, например «Du–Sh 08:00–17:00»
+  // Проверка по лицу и геозоне
+  face_required: '0',  // 1 — отметка из Telegram только через камеру (обычная геолокация не засчитывается)
+  face_match: '0.45',  // расстояние до эталона: не больше — «совпало»
+  face_review: '0.55', // между match и review — «на проверку админу»; больше — отказ
+  gps_max_accuracy: '100', // метров: если телефон определил позицию грубее — отказ
 };
 
 const DEFAULT_PAGES = [
@@ -275,6 +323,10 @@ function openDb(file) {
   addColumn('users', 'frozen', 'INTEGER NOT NULL DEFAULT 0');
   addColumn('users', 'last_seen', 'TEXT');
   addColumn('users', 'birthday', "TEXT NOT NULL DEFAULT ''");
+  addColumn('attendance', 'verify', "TEXT NOT NULL DEFAULT 'plain'");
+  addColumn('attendance', 'face_distance', 'REAL');
+  addColumn('attendance', 'review', "TEXT NOT NULL DEFAULT ''");
+  addColumn('attendance', 'attempt_id', 'INTEGER');
   addColumn('media', 'tour', "TEXT NOT NULL DEFAULT ''");
   addColumn('media', 'kind', "TEXT NOT NULL DEFAULT 'photo'");
   for (const c of ['image', 'video', 'audio', 'video_url']) addColumn('pages', c, "TEXT NOT NULL DEFAULT ''");

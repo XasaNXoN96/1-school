@@ -10,6 +10,8 @@ const { createNotifier } = require('./notify');
 const { runReminders } = require('./reminders');
 const { handleRawUpload } = require('./rawupload');
 const { renderLite } = require('./lite');
+const { faceRoutes } = require('./routes-face');
+const { createFaceEngine } = require('./face');
 
 const COOKIE = 'sid';
 
@@ -27,11 +29,13 @@ function createLoginLimiter() {
   };
 }
 
-function createApp({ dbFile, dataDir, publicDir, cookieSecure = false, scheduler = true }) {
+function createApp({ dbFile, dataDir, publicDir, cookieSecure = false, scheduler = true, botToken = '', publicUrl = '', faceEngine = null }) {
   const db = openDb(dbFile);
   const notifier = createNotifier(db);
   const uploadsDir = path.join(dataDir, 'uploads');
+  const engine = faceEngine || createFaceEngine({ dir: path.join(publicDir, 'vendor', 'face') });
   const routes = buildRoutes({ db, notifier, uploadsDir });
+  routes.push(...faceRoutes({ db, notifier, engine, botToken, publicUrl }));
   const limiter = createLoginLimiter();
 
   const server = http.createServer(async (req, res) => {
@@ -52,8 +56,14 @@ function createApp({ dbFile, dataDir, publicDir, cookieSecure = false, scheduler
         if (serveFile(res, uploadsDir, pathname.slice('/uploads/'.length), { 'Cache-Control': 'public, max-age=604800, immutable' }, req)) return;
         throw new HttpError(404, 'Не найдено');
       }
-      const rel = pathname === '/' ? 'index.html' : pathname.slice(1);
-      if (serveFile(res, publicDir, rel, { 'Cache-Control': 'no-cache' }, req)) return;
+      const rel = pathname === '/' ? 'index.html' : pathname === '/checkin' ? 'checkin.html' : pathname.slice(1);
+      // Страница проверки открывается как Telegram Mini App (в т.ч. во фрейме web.telegram.org) и использует камеру и геолокацию
+      const extra = rel === 'checkin.html' ? {
+        'X-Frame-Options': null,
+        'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self' https://telegram.org; frame-ancestors https://web.telegram.org https://*.telegram.org https://telegram.org",
+        'Permissions-Policy': 'camera=(self), geolocation=(self)',
+      } : {};
+      if (serveFile(res, publicDir, rel, { 'Cache-Control': 'no-cache', ...extra }, req)) return;
       throw new HttpError(404, 'Не найдено');
     } catch (e) {
       const status = e instanceof HttpError ? e.status : 500;
@@ -65,14 +75,14 @@ function createApp({ dbFile, dataDir, publicDir, cookieSecure = false, scheduler
   // Журнал действий: кто и что менял (содержимое запросов не сохраняем — там могут быть пароли)
   const AUDIT_LABELS = [['users', 'Сотрудники'], ['news', 'Новости'], ['announcements', 'Объявления'], ['media', 'Медиа'], ['pages', 'Страницы'],
     ['students', 'Ученики'], ['achievements', 'Достижения'], ['tasks', 'Поручения'], ['events', 'Календарь'], ['faq', 'Вопросы и ответы'],
-    ['applications', 'Заявки'], ['settings', 'Настройки'], ['stats', 'Статистика'], ['attendance', 'Посещаемость'], ['holidays', 'Праздники'], ['lessons', 'Расписание']];
+    ['applications', 'Заявки'], ['faces', 'Лица сотрудников'], ['checkins', 'Проверка по лицу'], ['face-settings', 'Настройки проверки по лицу'], ['settings', 'Настройки'], ['stats', 'Статистика'], ['attendance', 'Посещаемость'], ['holidays', 'Праздники'], ['lessons', 'Расписание']];
   const AUDIT_VERBS = { POST: 'добавил(а)/изменил(а)', PUT: 'изменил(а)', DELETE: 'удалил(а)' };
   function logAudit(user, method, pathname) {
     const seg = pathname.split('/')[2] || '';
-    if (['ping', 'notices', 'upload', 'upload-raw', 'plans'].includes(seg)) return;
+    if (['ping', 'notices', 'upload', 'upload-raw', 'plans', 'checkin'].includes(seg)) return;
     const label = (AUDIT_LABELS.find(([k]) => k === seg) || [seg, seg])[1];
     let verb = AUDIT_VERBS[method] || method;
-    if (/\/freeze$/.test(pathname)) verb = 'заморозил(а)/разморозил(а)'; else if (/reset-password$/.test(pathname)) verb = 'сменил(а) пароль'; else if (/\/(done|read)$/.test(pathname)) verb = 'отметил(а)';
+    if (/\/freeze$/.test(pathname)) verb = 'заморозил(а)/разморозил(а)'; else if (/reset-password$/.test(pathname)) verb = 'сменил(а) пароль'; else if (/\/(done|read)$/.test(pathname)) verb = 'отметил(а)'; else if (/\/review$/.test(pathname)) verb = 'принял(а) решение по отметке';
     try { db.prepare('INSERT INTO audit_log (user_id, user_name, action, target) VALUES (?,?,?,?)').run(user.id, user.full_name, verb, label); } catch { /* журнал не должен ломать запрос */ }
   }
 
@@ -128,7 +138,7 @@ function createApp({ dbFile, dataDir, publicDir, cookieSecure = false, scheduler
     const isLogin = method === 'POST' && url.pathname === '/api/auth/login';
     if (isLogin && limiter.blocked(ip)) throw new HttpError(429, 'Слишком много попыток входа. Подождите 15 минут.');
 
-    const body = mutating ? await readBody(req, url.pathname === '/api/upload' ? 9_000_000 : 1_000_000) : {};
+    const body = mutating ? await readBody(req, url.pathname === '/api/upload' ? 9_000_000 : /^\/api\/(checkin\/finish|faces\/\d+)$/.test(url.pathname) ? 3_000_000 : 1_000_000) : {};
     const out = { cookies: [] };
     const cookieAttrs = `Path=/; HttpOnly; SameSite=Lax${cookieSecure ? '; Secure' : ''}`;
     const ctx = {
@@ -158,7 +168,7 @@ function createApp({ dbFile, dataDir, publicDir, cookieSecure = false, scheduler
 
   let timer = null;
   if (scheduler) { timer = setInterval(() => { try { runReminders(db, notifier); } catch (e) { console.error('[reminders]', e.message); } }, 30_000); timer.unref(); }
-  return { server, db, notifier, stopScheduler: () => clearInterval(timer) };
+  return { server, db, notifier, engine, stopScheduler: () => clearInterval(timer) };
 }
 
 module.exports = { createApp };

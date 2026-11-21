@@ -221,6 +221,7 @@ function buildRoutes({ db, notifier, uploadsDir }) {
           late_minutes: r?.late_minutes ?? 0,
         };
       });
+      out.face_pending = one("SELECT COUNT(*) c FROM checkin_attempts WHERE status='pending'").c;
       out.new_applications = one("SELECT COUNT(*) c FROM applications WHERE status='new'").c;
       out.pending_achievements = one("SELECT COUNT(*) c FROM achievements WHERE status='pending'").c;
       out.tasks_overdue = one("SELECT COUNT(*) c FROM tasks WHERE status='open' AND due_date IS NOT NULL AND due_date < ?", t.date).c;
