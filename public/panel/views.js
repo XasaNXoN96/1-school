@@ -223,15 +223,28 @@ const statsViews = {
       statCard('cap', last.teachers, 'Учителей сейчас', 'violet'), statCard('user', `${last.teachers - first.teachers >= 0 ? '+' : ''}${last.teachers - first.teachers}`, 'Новых учителей', 'orange'), statCard('book', avg.length ? `${avg[avg.length - 1].value}%` : '—', 'Среднее усвоение', 'amber')) : null;
     const trendBox = (title, key, color) => box(title, sc.length ? h('div', {}, h('div', { class: 'chart-head' }, h('b', {}, `${first[key]} → ${last[key]}`), deltaPill(first[key], last[key])),
       lineChart(sc.map((r) => ({ label: monthLabel(r.date), value: r[key] })), { color })) : h('div', { class: 'empty' }, T('Пока пусто')));
-    const subjCards = Object.entries(bySubj).map(([name, arr]) => {
-      const a = arr[0].percent, b = arr[arr.length - 1].percent, color = b >= a ? '#2e9e62' : '#d6473d';
-      return h('section', { class: 'panel subj' }, h('div', { class: 'chart-head' }, h('b', {}, name), h('span', {}, `${a}% → ${b}%`), deltaPill(a, b, '%')),
-        lineChart(arr.map((m) => ({ label: monthLabel(m.date), value: m.percent })), { color, unit: '%', w: 360, hgt: 180 }));
-    });
+    const subj = Object.entries(bySubj).map(([name, arr]) => ({ name, arr, a: arr[0].percent, b: arr[arr.length - 1].percent }));
+    const subjCard = (s, big) => { const color = s.b >= s.a ? '#2e9e62' : '#d6473d';
+      return h('section', { class: `panel subj${big ? ' big' : ''}` }, h('div', { class: 'chart-head' }, h('b', {}, s.name), h('span', {}, `${s.a}% → ${s.b}%`), deltaPill(s.a, s.b, '%')),
+        lineChart(s.arr.map((m) => ({ label: monthLabel(m.date), value: m.percent })), big ? { color, unit: '%', w: 760, hgt: 260 } : { color, unit: '%', w: 360, hgt: 180 })); };
+    const sel = (opts, onchange) => h('select', { onchange: (e) => onchange(e.target.value) }, opts.map(([v2, l]) => h('option', { value: v2 }, l)));
+    const gridBox = h('div');
+    const f = { subject: '', filter: 'all', sort: 'name' };
+    const draw = () => {
+      let list = subj.filter((s) => (!f.subject || s.name === f.subject) && (f.filter === 'all' || (f.filter === 'up' && s.b > s.a) || (f.filter === 'down' && s.b < s.a) || (f.filter === 'high' && s.b >= 75) || (f.filter === 'low' && s.b < 65)));
+      const cmp = { name: (x, y) => x.name.localeCompare(y.name), high: (x, y) => y.b - x.b, low: (x, y) => x.b - y.b, growth: (x, y) => (y.b - y.a) - (x.b - x.a), drop: (x, y) => (x.b - x.a) - (y.b - y.a) }[f.sort];
+      list = [...list].sort(cmp);
+      gridBox.replaceChildren(!list.length ? h('div', { class: 'empty' }, T('Ничего не найдено')) : f.subject ? subjCard(list[0], true) : h('div', { class: 'subj-grid' }, list.map((s) => subjCard(s, false))));
+    };
+    const controls = h('div', { class: 'filters' },
+      h('label', {}, h('span', {}, T('Предмет')), sel([['', T('Все предметы')], ...subj.map((s) => [s.name, s.name])], (x) => { f.subject = x; draw(); })),
+      h('label', {}, h('span', {}, T('Показать')), sel([['all', T('Все')], ['up', T('Где вырос')], ['down', T('Где снизился')], ['high', T('Высокое усвоение (75% и выше)')], ['low', T('Низкое усвоение (ниже 65%)')]], (x) => { f.filter = x; draw(); })),
+      h('label', {}, h('span', {}, T('Сортировка')), sel([['name', T('По названию')], ['high', T('Сначала где больше')], ['low', T('Сначала где меньше')], ['growth', T('Сначала самый рост')], ['drop', T('Сначала самое снижение')]], (x) => { f.sort = x; draw(); })));
+    draw();
     return h('div', {}, cards,
       h('div', { class: 'two' }, trendBox('Динамика числа учеников', 'students', '#1d55c8'), trendBox('Динамика числа учителей', 'teachers', '#6a4fd8')),
       avg.length ? box('Среднее усвоение по всем предметам', lineChart(avg, { color: '#d9801a', unit: '%', w: 760, hgt: 220 })) : null,
-      h('h2', { class: 'sec' }, T('Усвоение по предметам')), subjCards.length ? h('div', { class: 'subj-grid' }, subjCards) : h('div', { class: 'empty' }, T('Пока пусто')));
+      h('h2', { class: 'sec' }, T('Усвоение по предметам')), subj.length ? h('div', {}, controls, gridBox) : h('div', { class: 'empty' }, T('Пока пусто')));
   },
   school: async () => crud({ title: 'Ученики и учителя', hideTitle: true, load: () => api('GET', '/api/stats').then((s) => [...s.school].reverse()),
     columns: [{ label: 'Дата', render: (r) => fmtD(r.date) }, { label: 'Учеников', key: 'students' }, { label: 'Учителей', key: 'teachers' }, { label: 'Сотрудники', key: 'staff' }],
@@ -244,10 +257,26 @@ const statsViews = {
 };
 
 // ---------- сотрудники ----------
-views.users = async () => crud({ title: 'Пользователи', load: () => api('GET', '/api/users'),
-  columns: [{ label: 'ФИО', render: (u) => h('div', {}, h('b', {}, u.full_name), h('div', { class: 'muted' }, `${ROLE()[u.role]}${u.subject ? ' · ' + u.subject : ''}`)) }, { label: 'Логин', key: 'username' },
-    { label: 'Смена', render: (u) => `${u.shift_start}–${u.shift_end}` }, { label: 'Оклад', render: (u) => (u.monthly_salary ? fmtMoney(u.monthly_salary) : '—') },
-    { label: 'Статус', render: (u) => h('div', {}, u.frozen ? pill(T('заморожен'), 'bad') : pill(T('активен'), 'ok'), ' ', pill(u.telegram_linked ? 'Telegram ✓' : 'Telegram —', u.telegram_linked ? 'info' : 'warn')) }],
+// Присутствие на сайте: зелёная мигающая точка — сейчас в системе, красная — не в системе; при наведении — когда был(а) последний раз.
+const ONLINE_MIN = 3;
+const seenMs = (u) => (u.last_seen ? Date.parse(String(u.last_seen).replace(' ', 'T') + 'Z') : 0);
+const agoText = (ms) => {
+  const m = Math.max(1, Math.round((Date.now() - ms) / 60000));
+  if (m < 60) return `${m} ${T('мин')} ${T('назад')}`;
+  if (m < 60 * 24) return `${Math.round(m / 60)} ${T('ч')} ${T('назад')}`;
+  return `${Math.round(m / 1440)} ${T('дн')} ${T('назад')}`;
+};
+const presence = (u) => {
+  const ms = seenMs(u), online = ms && Date.now() - ms < ONLINE_MIN * 60000;
+  const tip = online ? T('Сейчас на сайте') : ms ? `${T('Не на сайте')} · ${T('Был(а) на сайте')}: ${agoText(ms)}` : `${T('Не на сайте')} · ${T('Ещё не заходил(а)')}`;
+  return h('span', { class: `pres ${online ? 'on' : 'off'}`, tabindex: '0', 'data-tip': tip, 'aria-label': tip });
+};
+const avatarOf = (u) => h('span', { class: 'ava' }, u.photo ? h('img', { src: imgUrl(u.photo), alt: '' }) : h('b', {}, (u.full_name || '?').slice(0, 1)), presence(u));
+
+views.users = async () => crud({ title: 'Пользователи', load: () => api('GET', '/api/users'), iconOnly: true,
+  columns: [{ label: 'Сотрудник', render: (u) => h('div', { class: 'person-cell' }, avatarOf(u), h('div', {}, h('b', {}, u.full_name), h('div', { class: 'muted' }, `${ROLE()[u.role]}${u.subject ? ' · ' + u.subject : ''}`), u.frozen ? h('span', { class: 'frozen-tag' }, icon('snow', 12), T('заморожен')) : null)) },
+    { label: 'Логин', render: (u) => h('span', { class: 'nowrap' }, u.username) }, { label: 'Смена', render: (u) => h('span', { class: 'nowrap' }, `${u.shift_start}–${u.shift_end}`) },
+    { label: 'Оклад', render: (u) => (u.monthly_salary ? h('span', { class: 'nowrap' }, fmtMoney(u.monthly_salary)) : '—') }],
   fields: (ex) => [
     ...(ex ? [] : [{ name: 'username', label: 'Логин', required: true }, { name: 'password', label: 'Пароль (мин. 8 символов)', type: 'password', required: true },
       { name: 'role', label: 'Роль', type: 'select', options: [['teacher', T('Учитель')], ['staff', T('Сотрудник')], ...(state.me.role === 'director' ? [['assistant', T('Ассистент директора')]] : [])] }]),
@@ -259,7 +288,7 @@ views.users = async () => crud({ title: 'Пользователи', load: () => 
   create: (d) => api('POST', '/api/users', d), update: (u, d) => api('PUT', `/api/users/${u.id}`, d),
   remove: (u) => (u.role === 'director' || u.id === state.me.id ? Promise.reject(new Error(T('Нельзя удалить этого пользователя'))) : api('DELETE', `/api/users/${u.id}`)),
   actions: (u, refresh, m) => [
-    h('button', { class: 'small', onclick: () => guard(m, async () => { const r = await api('POST', `/api/users/${u.id}/link-code`); msg(m, `${T('Код привязки Telegram для')} «${u.full_name}»: ${r.code} — ${T('отправить боту')}: /start ${r.code}`, true); }) }, 'Telegram'),
+    iconBtn('send', u.telegram_linked ? 'Telegram привязан.' : 'Telegram', () => guard(m, async () => { const r = await api('POST', `/api/users/${u.id}/link-code`); msg(m, `${T('Код привязки Telegram для')} «${u.full_name}»: ${r.code} — ${T('отправить боту')}: /start ${r.code}`, true); }), u.telegram_linked ? 'tg-on' : ''),
     u.id !== state.me.id && u.role !== 'director' && iconBtn('snow', u.frozen ? 'Разморозить' : 'Заморозить', () => guard(m, async () => { await api('POST', `/api/users/${u.id}/freeze`, { frozen: !u.frozen }); await refresh(); })),
     u.id !== state.me.id && u.role !== 'director' && iconBtn('lock', 'Пароль', () => guard(m, async () => { const pw = prompt(T('Новый пароль (минимум 8 символов):')); if (pw) { await api('POST', `/api/users/${u.id}/reset-password`, { password: pw }); msg(m, T('Пароль изменён'), true); } }))] });
 

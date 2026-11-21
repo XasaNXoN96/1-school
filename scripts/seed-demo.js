@@ -62,6 +62,10 @@ T.t5 = addUser('teacher5', 'Nigora Abdullayeva', 'teacher', { subject: 'Ona tili
 T.t6 = addUser('teacher6', 'Sardor Qodirov', 'teacher', { subject: 'Tarix', salary: 3000000, photo: 't3' });
 T.t7 = addUser('teacher7', "Gulnora Ergasheva", "teacher", { subject: "Boshlang'ich sinflar", salary: 3000000, photo: 't5' });
 
+// «был на сайте»: у части сотрудников — прямо сейчас, у остальных — давно (минут назад)
+{ const AGO = { director: 0, assistant: 0, teacher1: 1, teacher2: 47, teacher3: 0, teacher4: 5 * 60, teacher5: 26 * 60, teacher6: 3 * 24 * 60 };
+  for (const [u, m] of Object.entries(AGO)) db.prepare("UPDATE users SET last_seen=datetime('now', ?) WHERE username=?").run(`-${m} minutes`, u); }
+
 const addStudent = db.prepare('INSERT INTO students (full_name, class_name, photo, is_best, best_note) VALUES (?,?,?,?,?)');
 const S = (n, c, p, best = 0, note = '') => addStudent.run(n, c, PH(p), best, note).lastInsertRowid;
 const s1 = S('Jasur Aliyev', '9-A', 'o_s1', 1, "A'lochi o'quvchi");

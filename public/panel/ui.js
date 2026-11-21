@@ -120,15 +120,15 @@ export function tabs(items, onPick, current) {
 export const iconBtn = (ico, label, onclick, cls = '') => h('button', { class: `small ${cls}`, onclick, title: T(label) }, icon(ico, 14), T(label));
 
 // Универсальный экран «список + форма добавления/редактирования».
-export async function crud({ title, load, columns, fields, create, update, remove, actions, canAdd = true, hideTitle = false, addLabel = '+ Добавить', initial = () => ({}) }) {
+export async function crud({ title, load, columns, fields, create, update, remove, actions, canAdd = true, hideTitle = false, iconOnly = false, addLabel = '+ Добавить', initial = () => ({}) }) {
   const root = h('div'), msgBox = h('div'), listBox = h('div'), formBox = h('div');
   const refresh = async () => {
     const rows = await load();
-    const cell = (r) => h('div', { class: 'row', style: 'margin:0;flex-wrap:nowrap' },
+    const cell = (r) => h('div', { class: 'row acts', style: 'margin:0;flex-wrap:nowrap' },
       update && iconBtn('edit', 'Изменить', () => show(r, true)),
       actions?.(r, refresh, msgBox),
       remove && iconBtn('trash', 'Удалить', () => guard(msgBox, async () => { if (confirm(T('Удалить?'))) { await remove(r); await refresh(); } }), 'danger'));
-    listBox.replaceChildren(h('div', { class: 'panel' }, table([...columns, { label: '', render: cell }], rows)));
+    listBox.replaceChildren(h('div', { class: `panel${iconOnly ? ' icon-only' : ''}` }, table([...columns, { label: '', render: cell }], rows)));
   };
   const show = (values, editing) => {
     formBox.replaceChildren(formPanel({ title: editing ? 'Редактирование' : 'Добавить', fields: fields(editing ? values : null), values,

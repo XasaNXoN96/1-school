@@ -223,6 +223,7 @@ function openDb(file) {
   };
   addColumn('news', 'kind', "TEXT NOT NULL DEFAULT 'news'");
   addColumn('users', 'frozen', 'INTEGER NOT NULL DEFAULT 0');
+  addColumn('users', 'last_seen', 'TEXT');
   addColumn('media', 'kind', "TEXT NOT NULL DEFAULT 'photo'");
   for (const c of ['image', 'video', 'audio', 'video_url']) addColumn('pages', c, "TEXT NOT NULL DEFAULT ''");
   const ins = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');

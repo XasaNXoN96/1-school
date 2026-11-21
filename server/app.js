@@ -84,6 +84,10 @@ function createApp({ dbFile, dataDir, publicDir, cookieSecure = false, scheduler
     const cookies = parseCookies(req.headers.cookie);
     const user = A.userFromToken(db, cookies[COOKIE]);
     A.requireRole(user, match.r.guard);
+    // «был на сайте»: обновляем не чаще раза в 30 секунд
+    if (user && Date.now() - (user.last_seen ? Date.parse(String(user.last_seen).replace(' ', 'T') + 'Z') : 0) > 30000) {
+      db.prepare("UPDATE users SET last_seen=datetime('now') WHERE id=?").run(user.id);
+    }
 
     const ip = req.socket.remoteAddress || '';
     const isLogin = method === 'POST' && url.pathname === '/api/auth/login';

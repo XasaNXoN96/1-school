@@ -172,6 +172,7 @@ function buildRoutes({ db, notifier, uploadsDir }) {
 
   post('/api/auth/logout', 'public', ({ clearSession }) => { clearSession(); return { ok: true }; });
   get('/api/auth/me', 'auth', ({ user }) => selfUser(user));
+  get('/api/ping', 'auth', () => ({ ok: true }));
 
   post('/api/auth/password', 'auth', ({ user, body }) => {
     if (!A.verifyPassword(String(body.current || ''), user.password_hash)) throw new HttpError(400, 'Текущий пароль неверен');

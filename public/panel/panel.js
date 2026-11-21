@@ -42,6 +42,17 @@ async function authScreen(setup) {
 }
 
 // ---------- каркас ----------
+// Меню: на широком экране сворачивается/разворачивается кликом (состояние запоминается), на узком — выезжает поверх.
+const SIDE_KEY = 'panel_side_collapsed';
+const wide = () => window.matchMedia('(min-width: 901px)').matches;
+function toggleSide() {
+  if (wide()) {
+    const on = document.body.classList.toggle('side-collapsed');
+    try { localStorage.setItem(SIDE_KEY, on ? '1' : '0'); } catch { /* ignore */ }
+  } else document.body.classList.toggle('side-open');
+}
+try { if (localStorage.getItem(SIDE_KEY) === '1') document.body.classList.add('side-collapsed'); } catch { /* ignore */ }
+
 async function route() {
   const me = state.me;
   const items = isManager() ? MENU_MANAGER : MENU_STAFF;
@@ -55,7 +66,7 @@ async function route() {
       h('a', { class: 'item', href: '/', target: '_blank' }, icon('home', 20), T('Открыть сайт'))),
     h('div', { class: 'side-role' }, icon(isManager() ? 'crown' : 'user', 20), roleLabel(me.role)));
   const greetName = isManager() ? roleLabel(me.role) : me.full_name;
-  const top = h('header', { class: 'top' }, h('button', { class: 'burger', 'aria-label': T('Меню'), onclick: () => document.body.classList.toggle('side-open') }, icon('menu', 22)),
+  const top = h('header', { class: 'top' }, h('button', { class: 'burger', 'aria-label': T('Меню'), title: T('Меню'), onclick: toggleSide }, icon('menu', 22)),
     h('div', { class: 'hello' }, h('h1', {}, `${GREET[lang()]}, ${greetName}!`), h('p', {}, isManager() ? T('Панель управления информационной системой школы') : `${me.subject ? me.subject + ' · ' : ''}${roleLabel(me.role)}`)),
     h('span', { class: 'spacer' }), langMenu(),
     h('a', { class: 'bell', href: '#/messages', 'aria-label': T('Сообщения') }, icon('bell', 22), d.unread ? h('i', {}, String(d.unread)) : null),
@@ -77,6 +88,7 @@ async function start() {
     const st = await api('GET', '/api/setup/status').catch(() => ({ needsSetup: false }));
     return authScreen(st.needsSetup);
   }
+  if (!start.beat) { start.beat = setInterval(() => { if (state.me && !document.hidden) api('GET', '/api/ping').catch(() => {}); }, 60000); }
   if (!start.bound) { window.addEventListener('hashchange', () => state.me && route()); start.bound = true; }
   route();
 }
