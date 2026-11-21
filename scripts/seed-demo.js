@@ -127,10 +127,68 @@ for (const [tid, [subj, classes]] of Object.entries(PLAN)) for (let wd = 1; wd <
   const n = ((i + wd) % 4) + 1; lesson.run(tid, wd, n, cl, subj, String(100 + wd * 3 + i), SLOT[n - 1][0], SLOT[n - 1][1]);
 });
 const d = (add) => { const x = new Date(Date.now() + add * 86400000); return x.toISOString().slice(0, 10); };
-const task = db.prepare('INSERT INTO tasks (title, description, assignee_id, created_by, due_date) VALUES (?,?,?,1,?)');
-task.run('Choraklik hisobotini topshirish', "Sinflar bo'yicha o'zlashtirish hisobotini elektron shaklda yuboring.", T.t1, d(3));
-task.run("Olimpiada ro'yxatini tayyorlash", "Respublika bosqichiga yo'llanma olgan o'quvchilar ro'yxatini tuzing.", T.t1, d(6));
-task.run("Kompyuter sinfi inventarizatsiyasi", "Yangi xonadagi jihozlar ro'yxatini tekshiring.", T.t2, d(4));
+// Поручения с разным исходом: в срок / с опозданием / не выполнено / в работе
+const task = db.prepare('INSERT INTO tasks (title, description, assignee_id, created_by, due_date, status, done_at, created_at) VALUES (?,?,?,1,?,?,?,?)');
+const at = (add, h = 10) => `${d(add)} ${String(h).padStart(2, '0')}:20:00`;
+// [исполнитель, поручение, описание, срок(дни от сегодня), выполнено (дни от сегодня) | null]
+const TASKS = [
+  [T.t1, 'Choraklik hisobotini topshirish', "Sinflar bo'yicha o'zlashtirish hisoboti.", -12, -13], [T.t1, "Sinf jurnalini to'ldirish", 'Oktabr oyi bo‘yicha.', -9, -10],
+  [T.t1, "Test savollarini tayyorlash", '9-sinf uchun nazorat ishi.', -6, -7], [T.t1, "Olimpiada ro'yxatini tayyorlash", "Respublika bosqichiga yo'llanma olganlar.", -5, -3],
+  [T.t1, "Subbotnikda sinf hududini tozalash", 'Maktab hovlisidagi 9-A sinf hududi.', -2, null], [T.t1, "Ota-onalar yig'ilishi bayonnomasi", 'Yig‘ilishdan keyin 2 kun ichida.', 3, null],
+  [T.t1, 'Dars rejalarini yangilash', 'Yangi chorak uchun.', 7, null],
+  [T.t2, 'Kompyuter sinfi inventarizatsiyasi', "Yangi xonadagi jihozlar ro'yxati.", -14, -15], [T.t2, 'IT haftaligi ssenariysi', 'Tadbir rejasini topshirish.', -11, -12],
+  [T.t2, "Raqamli jurnalga o'tkazish", '5–7-sinflar ma’lumotlari.', -8, -5], [T.t2, "Dasturlash to'garagi dasturi", 'Yangi yil uchun.', -7, -4], [T.t2, 'Antivirus yangilash', 'Barcha kompyuterlar.', -3, null],
+  [T.t2, "Maktab saytiga materiallar", 'Oyning eng yaxshi suratlari.', 5, null],
+  [T.t3, 'IELTS mashg‘ulot jadvali', '11-sinf uchun.', -10, -12], [T.t3, 'Ingliz tili olimpiadasi savollari', '', -8, -9], [T.t3, 'Chet tillar haftaligi rejasi', '', -4, -6], [T.t3, 'Lug‘at test natijalari', '', 4, null],
+  [T.t4, 'Fizika laboratoriyasi hisoboti', '', -9, -10], [T.t4, 'Asboblar ro‘yxati', '', -6, null], [T.t4, 'Nazorat ishi natijalari', '', -2, null],
+  [T.t5, 'Metodik ishlanma', '', -10, -11], [T.t5, 'Insho tanlovi', '', -7, -8], [T.t5, 'Kitobxonlik haftaligi hisoboti', '', -5, -3],
+  [T.t6, 'Tarixiy sanalar taqdimoti', '', -8, -9], [T.t6, "Muzey ekskursiyasi rejasi", '', 6, null],
+  [T.t7, "Boshlang'ich sinflar ko'rigi", '', -9, -10], [T.t7, 'Bayram matinesi', '', -6, -7], [T.t7, "Ota-onalar bilan uchrashuv", '', -3, -1],
+];
+for (const [who, title, descr, due, done] of TASKS) task.run(title, descr, who, d(due), done == null ? 'open' : 'done', done == null ? null : at(done, 9), at(Math.min(due, done ?? due) - 4));
+
+// Посещаемость за прошлый и текущий месяц (для отчётов и зарплаты)
+const att = db.prepare('INSERT OR IGNORE INTO attendance (user_id, date, status, check_in, check_out, late_minutes, early_minutes, note) VALUES (?,?,?,?,?,?,?,?)');
+{
+  const now = new Date(); const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  let seedN = 7; const rnd = () => (seedN = (seedN * 9301 + 49297) % 233280) / 233280;
+  for (let day = new Date(first); day < new Date(now.getFullYear(), now.getMonth(), now.getDate()); day.setDate(day.getDate() + 1)) {
+    if (day.getDay() === 0) continue;
+    const ds = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+    for (const id of [2, ...Object.values(T)]) {
+      const r = rnd();
+      if (r < 0.04) att.run(id, ds, 'absent', null, null, 0, 0, '');
+      else if (r < 0.07) att.run(id, ds, 'excused', null, null, 0, 0, 'Kasallik');
+      else if (r < 0.14) { const m = 12 + Math.floor(rnd() * 45); att.run(id, ds, 'present', `${ds} 09:${String(m % 60).padStart(2, '0')}:00`.replace('09:' + String(m % 60).padStart(2, '0'), m >= 60 ? '10:' + String(m % 60).padStart(2, '0') : '09:' + String(m).padStart(2, '0')), `${ds} 14:05:00`, m, 0, ''); }
+      else att.run(id, ds, 'present', `${ds} 08:${String(40 + Math.floor(rnd() * 19))}:00`, `${ds} 14:0${Math.floor(rnd() * 9)}:00`, 0, 0, '');
+    }
+  }
+}
+
+  // Сегодняшний день: кто пришёл, кто опоздал, кто ещё не пришёл
+  const tds = d(0); const L = (id, ci, co, late) => att.run(id, tds, 'present', `${tds} ${ci}:00`, co ? `${tds} ${co}:00` : null, late, 0, '');
+  L(T.t1, '09:45', '14:03', 45); L(T.t2, '08:52', '14:01', 0); L(T.t3, '08:58', '14:00', 0); L(T.t5, '08:47', '14:06', 0); L(T.t6, '09:20', '14:02', 20); L(T.t7, '08:55', '14:00', 0);
+
+// Внутренние объявления для сотрудников
+const ann = db.prepare('INSERT INTO announcements (title, body, to_all, created_by, created_at) VALUES (?,?,?,1,?)');
+const annT = db.prepare('INSERT INTO announcement_targets (announcement_id, user_id) VALUES (?,?)');
+ann.run("Sport musobaqasi — shanba kuni", "Shanba kuni soat 10:00 da maktab stadionida o'qituvchilar o'rtasida mini-futbol va voleybol musobaqasi bo'ladi. Ishtirok etmoqchi bo'lganlar ro'yxatdan o'tsin.", 1, at(-1) );
+ann.run("Pedagogik kengash — juma kuni 15:00", "Choraklik natijalar va kelgusi chorak rejasi muhokama qilinadi. Kelmaslik uchun oldindan ogohlantiring.", 1, at(-2));
+ann.run('Umumiy subbotnik', "Dushanba kuni dars tugagach maktab hovlisini tozalash bo'yicha subbotnik o'tkaziladi. Sinf rahbarlari o'z sinflari bilan qatnashadi.", 1, at(-4));
+const a4 = ann.run("Olimpiadaga tayyorgarlik — matematika va informatika ustozlariga", "Viloyat olimpiadasiga yo'llanma olgan o'quvchilar bilan qo'shimcha mashg'ulotlar jadvali ilova qilinadi.", 0, at(-3)).lastInsertRowid;
+annT.run(a4, T.t1); annT.run(a4, T.t2);
+
+// Уведомления в колокольчике
+const note = db.prepare('INSERT INTO notices (user_id, text, read, created_at) VALUES (?,?,?,?)');
+note.run(T.t1, '📋 Yangi topshiriq: «Subbotnikda sinf hududini tozalash». Muddat: ' + d(-2), 0, at(-5));
+note.run(T.t1, '📢 Yangi e’lon: «Sport musobaqasi — shanba kuni»', 0, at(-1));
+note.run(T.t1, '⏰ Eslatma: Olimpiada mashg‘uloti', 1, at(-3));
+note.run(T.t2, '📋 Yangi topshiriq: «Maishiy antivirus yangilash»', 0, at(-4));
+note.run(1, '⏰ Rustam Karimov 09:45 da keldi — 45 daqiqa kechikish.', 0, at(-6, 9));
+note.run(1, '✅ Dilnoza Rahimova topshiriqni bajardi: «Raqamli jurnalga o‘tkazish».', 0, at(-5, 11));
+note.run(1, '🏆 Yangi yutuq tasdiqlashni kutmoqda', 1, at(-8));
+note.run(2, '⏰ Bobur Tursunov 09:20 da keldi — 20 daqiqa kechikish.', 0, at(-7, 9));
+
 const plan = db.prepare('INSERT INTO plans (user_id, title, date, time) VALUES (?,?,?,?)');
 plan.run(T.t1, "Ota-onalar yig'ilishiga tayyorgarlik", d(2), '15:00');
 plan.run(T.t1, "Olimpiada mashg'uloti", d(4), '14:00');
@@ -161,6 +219,14 @@ Telefon: +998 00 000-00-00.
 
 Qabul vaqti: dushanba–shanba, 09:00–17:00. Direktor qabuli: payshanba kunlari 15:00–17:00.`, '', 'contacts');
 setSetting(db, 'about_image', PH('staff'));
+
+// Статистика школы (вымышленная динамика)
+const ss = db.prepare('INSERT INTO stats_school (date, students, teachers, staff) VALUES (?,?,?,?)');
+for (const r of [['2025-09-01', 400, 50, 18], ['2025-12-25', 440, 50, 18], ['2026-03-20', 500, 52, 19], ['2026-06-01', 540, 54, 19], ['2026-09-01', 600, 56, 21]]) ss.run(...r);
+const sm = db.prepare('INSERT INTO stats_mastery (date, subject, percent) VALUES (?,?,?)');
+const QD = ['2025-10-31', '2025-12-27', '2026-03-20', '2026-05-25', '2026-10-31'];
+const MAST = { Matematika: [60, 64, 70, 75, 80], 'Ingliz tili': [55, 60, 66, 72, 78], Informatika: [70, 74, 77, 82, 86], Fizika: [80, 78, 74, 70, 66], 'Ona tili': [72, 73, 71, 74, 75], Tarix: [68, 66, 64, 67, 70] };
+for (const [subj, arr] of Object.entries(MAST)) arr.forEach((p, i) => sm.run(QD[i], subj, p));
 
 setSetting(db, 'clubs_count', '15+');
 setSetting(db, 'address', 'Gagarin shahri, 1-sonli umumiy o‘rta ta’lim maktabi');

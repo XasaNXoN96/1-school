@@ -110,3 +110,36 @@ test('загрузка видео: проверка формата, Range, чу�
   assert.equal((await part.arrayBuffer()).byteLength, 10);
   void fs; void os; void path; void handleRawUpload;
 });
+
+test('поручения: итог «в срок / с опозданием / не выполнено» и сводка по сотрудникам', async (t) => {
+  const { app, director, teacher, other, tch } = await bootstrap(t);
+  const iso = (add) => new Date(Date.now() + add * 86400000).toISOString().slice(0, 10);
+  const mk = async (title, due) => (await director('POST', '/api/tasks', { assignee_id: tch.id, title, due_date: due })).data.id;
+  const onTime = await mk('вовремя', iso(3)), late = await mk('поздно', iso(-2)), overdue = await mk('не сделано', iso(-1)), open = await mk('в работе', iso(5));
+  assert.equal((await teacher('POST', `/api/tasks/${onTime}/done`)).status, 200);
+  assert.equal((await teacher('POST', `/api/tasks/${late}/done`)).status, 200);
+  const list = (await teacher('GET', '/api/tasks')).data;
+  const by = (id) => list.find((x) => x.id === id).outcome;
+  assert.equal(by(onTime), 'on_time'); assert.equal(by(late), 'late'); assert.equal(by(overdue), 'overdue'); assert.equal(by(open), 'open');
+  const stats = (await director('GET', '/api/tasks/stats')).data.find((r) => r.user_id === tch.id);
+  assert.deepEqual([stats.on_time, stats.late, stats.overdue, stats.open, stats.total], [1, 1, 1, 1, 4]);
+  assert.equal(stats.rate, 33);
+  // учитель видит только свою сводку
+  const mine = (await teacher('GET', '/api/tasks/stats')).data;
+  assert.equal(mine.length, 1); assert.equal(mine[0].user_id, tch.id);
+  assert.equal((await other('GET', '/api/tasks/stats')).data[0].total, 0);
+});
+
+test('статистика школы: только руководство, upsert по дате', async (t) => {
+  const { director, teacher } = await bootstrap(t);
+  assert.equal((await teacher('GET', '/api/stats')).status, 403);
+  assert.equal((await director('POST', '/api/stats/school', { date: '2025-09-01', students: 400, teachers: 50 })).status, 200);
+  assert.equal((await director('POST', '/api/stats/school', { date: '2025-09-01', students: 410, teachers: 50 })).status, 200);
+  assert.equal((await director('POST', '/api/stats/school', { date: '2026-09-01', students: 600, teachers: 56 })).status, 200);
+  assert.equal((await director('POST', '/api/stats/mastery', { date: '2025-10-31', subject: 'Matematika', percent: 60 })).status, 200);
+  assert.equal((await director('POST', '/api/stats/mastery', { date: '2026-10-31', subject: 'Matematika', percent: 80 })).status, 200);
+  assert.equal((await director('POST', '/api/stats/mastery', { date: '2026-10-31', subject: 'Matematika', percent: 150 })).status === 200, false);
+  const st = (await director('GET', '/api/stats')).data;
+  assert.deepEqual(st.school.map((r) => r.students), [410, 600]);
+  assert.deepEqual(st.mastery.map((r) => r.percent), [60, 80]);
+});

@@ -69,6 +69,7 @@ views.dashboard = async () => {
     return h('div', {},
       h('div', { class: 'stats' }, statCard('users', c.students, 'Всего учеников', 'blue'), statCard('cap', c.teachers, 'Учителя', 'green'), statCard('users', c.staff, 'Сотрудники', 'orange'),
         statCard('news', c.news, 'Новости', 'violet'), statCard('trophy', c.achievements, 'Достижения', 'amber')),
+      d.tasks_overdue ? h('a', { class: 'alert', href: '#/reports' }, icon('clipboard', 18), `${T('Поручений не выполнено в срок')}: ${d.tasks_overdue}`) : null,
       d.pending_achievements ? h('a', { class: 'alert', href: '#/achievements' }, icon('trophy', 18), `${T('Достижений ждут подтверждения')}: ${d.pending_achievements}`) : null,
       h('div', { class: 'two' },
         box('Последние новости', d.recent_news.length ? d.recent_news.map((n) => h('a', { class: 'news-mini', href: '#/news' },
@@ -96,7 +97,7 @@ views.dashboard = async () => {
 views.attendance = async () => {
   const root = h('div'), msgBox = h('div'), body = h('div');
   let userId = state.me.id, month = thisMonth(), people = [];
-  if (isManager()) { people = (await api('GET', '/api/users')).filter((u) => u.role !== 'director'); if (people.length) userId = people[0].id; }
+  if (isManager()) { people = (await api('GET', '/api/users')).filter((u) => u.role !== 'director'); people.sort((a, b) => (b.role === 'teacher') - (a.role === 'teacher')); if (people.length) userId = people[0].id; }
   const draw = () => guard(msgBox, async () => {
     const r = await api('GET', `/api/attendance?month=${month}&user_id=${userId}`);
     body.replaceChildren(
@@ -135,21 +136,111 @@ views.salary = async () => {
 views.reports = async () => {
   const root = h('div'), body = h('div');
   const pick = async (k) => body.replaceChildren(await views[k]());
-  root.append(h('h1', {}, T('Отчёты')), tabs([['attendance', 'Посещаемость'], ['salary', 'Зарплата']], pick), body);
+  root.append(h('h1', {}, T('Отчёты')), tabs([['attendance', 'Посещаемость'], ['salary', 'Зарплата'], ['taskstats', 'Поручения']], pick), body);
   await pick('attendance');
   return root;
 };
 
 // ---------- поручения ----------
+const OUTCOME = { on_time: ['В срок', 'ok'], late: ['С опозданием', 'warn'], overdue: ['Не выполнено', 'bad'], open: ['В работе', 'info'] };
+const outcomePill = (o) => pill(T(OUTCOME[o]?.[0] || o), OUTCOME[o]?.[1] || '');
+const sumStats = (rows) => rows.reduce((a, r) => ({ total: a.total + r.total, on_time: a.on_time + r.on_time, late: a.late + r.late, overdue: a.overdue + r.overdue, open: a.open + r.open }), { total: 0, on_time: 0, late: 0, overdue: 0, open: 0 });
+const statRow = (t) => h('div', { class: 'stats five' }, statCard('clipboard', t.total, 'Всего поручений', 'blue'), statCard('check', t.on_time, 'Выполнено в срок', 'green'),
+  statCard('clock', t.late, 'Выполнено с опозданием', 'orange'), statCard('close', t.overdue, 'Не выполнено', 'red'), statCard('list', t.open, 'В работе', 'violet'));
+const rateBar = (r) => h('div', { class: 'ratebar', title: r.rate == null ? '' : `${r.rate}%` }, r.total ? [['on_time', 'ok'], ['late', 'warn'], ['overdue', 'bad'], ['open', 'info']].map(([k, c]) => (r[k] ? h('i', { class: c, style: `flex:${r[k]}` }) : null)) : null);
+
 views.tasks = async () => {
   const users = isManager() ? await api('GET', '/api/users') : [];
-  return crud({ title: 'Поручения', load: () => api('GET', '/api/tasks'), canAdd: isManager(),
+  const wrap = h('div');
+  const sumBox = h('div');
+  const refreshStats = async () => sumBox.replaceChildren(statRow(sumStats(await api('GET', '/api/tasks/stats'))));
+  await refreshStats();
+  const list = await crud({ title: 'Поручения', load: () => api('GET', '/api/tasks'), canAdd: isManager(),
     columns: [{ label: 'Поручение', render: (t) => h('div', {}, h('b', {}, t.title), t.description ? h('div', { class: 'muted' }, t.description) : null) }, { label: 'Исполнитель', key: 'assignee_name' }, { label: 'Срок', render: (t) => fmtD(t.due_date) },
-      { label: 'Статус', render: (t) => pill(t.status === 'done' ? T('Выполнено') : T('В работе'), t.status === 'done' ? 'ok' : 'warn') }],
+      { label: 'Статус', render: (t) => outcomePill(t.outcome) }],
     fields: () => [{ name: 'assignee_id', label: 'Исполнитель', type: 'select', options: users.map((u) => [u.id, `${u.full_name} (${ROLE()[u.role]})`]) }, { name: 'title', label: 'Поручение', required: true, wide: true },
       { name: 'description', label: 'Описание', type: 'textarea', wide: true }, { name: 'due_date', label: 'Срок', type: 'date' }],
-    create: (d) => api('POST', '/api/tasks', d), remove: isManager() ? (t) => api('DELETE', `/api/tasks/${t.id}`) : null,
-    actions: (t, refresh, m) => t.status === 'open' && iconBtn('check', 'Выполнено', () => guard(m, async () => { await api('POST', `/api/tasks/${t.id}/done`); await refresh(); }), 'primary') });
+    create: async (d) => { const r = await api('POST', '/api/tasks', d); refreshStats(); return r; }, remove: isManager() ? async (t) => { const r = await api('DELETE', `/api/tasks/${t.id}`); refreshStats(); return r; } : null,
+    actions: (t, refresh, m) => t.status === 'open' && iconBtn('check', 'Выполнено', () => guard(m, async () => { await api('POST', `/api/tasks/${t.id}/done`); await refresh(); refreshStats(); }), 'primary') });
+  // сводка над списком
+  const hd = list.querySelector('h1'); if (hd) (hd.closest('.head') || hd).after(sumBox); else list.prepend(sumBox);
+  wrap.append(list);
+  return wrap;
+};
+
+// ---------- отчёт по поручениям ----------
+views.taskstats = async () => {
+  const rows = await api('GET', '/api/tasks/stats');
+  return h('div', {}, statRow(sumStats(rows)), box(null, table([
+    { label: 'Сотрудник', render: (r) => h('div', {}, h('b', {}, r.full_name), r.subject ? h('div', { class: 'muted' }, r.subject) : null) },
+    { label: 'Всего поручений', key: 'total' }, { label: 'Выполнено в срок', render: (r) => pill(String(r.on_time), 'ok') }, { label: 'Выполнено с опозданием', render: (r) => pill(String(r.late), 'warn') },
+    { label: 'Не выполнено', render: (r) => pill(String(r.overdue), r.overdue ? 'bad' : '') }, { label: 'В работе', key: 'open' },
+    { label: 'В срок, %', render: (r) => (r.rate == null ? '—' : h('b', {}, `${r.rate}%`)) }, { label: '', render: rateBar }], rows, 'Пока пусто')));
+};
+
+
+// ---------- статистика (только руководство) ----------
+const NS = 'http://www.w3.org/2000/svg';
+const svg = (tag, attrs = {}, ...kids) => { const e = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); for (const c of kids) e.append(c.nodeType ? c : document.createTextNode(String(c))); return e; };
+const monthLabel = (d) => `${String(d).slice(5, 7)}.${String(d).slice(2, 4)}`;
+function lineChart(pts, { color = '#1d55c8', unit = '', min, max, w = 520, hgt = 220 } = {}) {
+  const padL = 52, padR = 22, padT = 28, padB = 34, iw = w - padL - padR, ih = hgt - padT - padB;
+  const vals = pts.map((p) => p.value); let lo = min ?? Math.min(...vals), hi = max ?? Math.max(...vals);
+  if (min == null) { const span = hi - lo || Math.max(1, hi * 0.2); lo = Math.max(0, lo - span * 0.5); hi += span * 0.35; if (unit === '%') hi = Math.min(100, hi); }
+  const x = (i) => padL + (pts.length === 1 ? iw / 2 : (i * iw) / (pts.length - 1)), y = (v) => padT + ((hi - v) * ih) / (hi - lo || 1);
+  const root = svg('svg', { viewBox: `0 0 ${w} ${hgt}`, class: 'chart', role: 'img', 'aria-hidden': 'true' });
+  for (let g = 0; g <= 3; g++) {
+    const v = lo + ((hi - lo) * g) / 3, yy = y(v);
+    root.append(svg('line', { x1: padL, x2: w - padR, y1: yy, y2: yy, stroke: '#e3e9f4', 'stroke-width': 1 }), svg('text', { x: padL - 8, y: yy + 4, 'text-anchor': 'end', 'font-size': 11, fill: '#8a97ad' }, Math.round(v)));
+  }
+  const line = pts.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(p.value).toFixed(1)}`).join(' ');
+  root.append(svg('path', { d: `${line} L${x(pts.length - 1).toFixed(1)} ${hgt - padB} L${x(0).toFixed(1)} ${hgt - padB} Z`, fill: color, opacity: 0.1 }), svg('path', { d: line, fill: 'none', stroke: color, 'stroke-width': 3, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+  pts.forEach((p, i) => root.append(svg('circle', { cx: x(i), cy: y(p.value), r: 4.5, fill: '#fff', stroke: color, 'stroke-width': 3 }),
+    svg('text', { x: x(i), y: y(p.value) - 11, 'text-anchor': 'middle', 'font-size': 12, 'font-weight': 700, fill: '#10274f' }, `${p.value}${unit}`),
+    svg('text', { x: x(i), y: hgt - 10, 'text-anchor': 'middle', 'font-size': 11, fill: '#8a97ad' }, p.label)));
+  return root;
+}
+const deltaPill = (a, b, unit = '') => { const d = b - a; return pill(`${d > 0 ? '▲ +' : d < 0 ? '▼ ' : '● '}${d}${unit}`, d > 0 ? 'ok' : d < 0 ? 'bad' : ''); };
+const growthPct = (a, b) => (a ? Math.round(((b - a) / a) * 100) : 0);
+
+views.stats = async () => {
+  const root = h('div'), body = h('div');
+  const pick = async (k) => body.replaceChildren(await statsViews[k]());
+  root.append(h('h1', {}, T('Статистика')), tabs([['overview', 'Обзор'], ['school', 'Ученики и учителя (данные)'], ['mastery', 'Усвоение предметов (данные)']], pick), body);
+  await pick('overview');
+  return root;
+};
+
+const statsViews = {
+  async overview() {
+    const st = await api('GET', '/api/stats');
+    const sc = st.school, first = sc[0], last = sc[sc.length - 1];
+    const bySubj = {}; for (const m of st.mastery) (bySubj[m.subject] ||= []).push(m);
+    const dates = [...new Set(st.mastery.map((m) => m.date))].sort();
+    const avg = dates.map((dt) => { const v = st.mastery.filter((m) => m.date === dt).map((m) => m.percent); return { label: monthLabel(dt), value: Math.round(v.reduce((a, b) => a + b, 0) / v.length) }; });
+    const cards = last ? h('div', { class: 'stats' },
+      statCard('users', last.students, 'Учеников сейчас', 'blue'), statCard('trend', `${growthPct(first.students, last.students) >= 0 ? '+' : ''}${growthPct(first.students, last.students)}%`, 'Рост числа учеников', 'green'),
+      statCard('cap', last.teachers, 'Учителей сейчас', 'violet'), statCard('user', `${last.teachers - first.teachers >= 0 ? '+' : ''}${last.teachers - first.teachers}`, 'Новых учителей', 'orange'), statCard('book', avg.length ? `${avg[avg.length - 1].value}%` : '—', 'Среднее усвоение', 'amber')) : null;
+    const trendBox = (title, key, color) => box(title, sc.length ? h('div', {}, h('div', { class: 'chart-head' }, h('b', {}, `${first[key]} → ${last[key]}`), deltaPill(first[key], last[key])),
+      lineChart(sc.map((r) => ({ label: monthLabel(r.date), value: r[key] })), { color })) : h('div', { class: 'empty' }, T('Пока пусто')));
+    const subjCards = Object.entries(bySubj).map(([name, arr]) => {
+      const a = arr[0].percent, b = arr[arr.length - 1].percent, color = b >= a ? '#2e9e62' : '#d6473d';
+      return h('section', { class: 'panel subj' }, h('div', { class: 'chart-head' }, h('b', {}, name), h('span', {}, `${a}% → ${b}%`), deltaPill(a, b, '%')),
+        lineChart(arr.map((m) => ({ label: monthLabel(m.date), value: m.percent })), { color, unit: '%', w: 360, hgt: 180 }));
+    });
+    return h('div', {}, cards,
+      h('div', { class: 'two' }, trendBox('Динамика числа учеников', 'students', '#1d55c8'), trendBox('Динамика числа учителей', 'teachers', '#6a4fd8')),
+      avg.length ? box('Среднее усвоение по всем предметам', lineChart(avg, { color: '#d9801a', unit: '%', w: 760, hgt: 220 })) : null,
+      h('h2', { class: 'sec' }, T('Усвоение по предметам')), subjCards.length ? h('div', { class: 'subj-grid' }, subjCards) : h('div', { class: 'empty' }, T('Пока пусто')));
+  },
+  school: async () => crud({ title: 'Ученики и учителя', hideTitle: true, load: () => api('GET', '/api/stats').then((s) => [...s.school].reverse()),
+    columns: [{ label: 'Дата', render: (r) => fmtD(r.date) }, { label: 'Учеников', key: 'students' }, { label: 'Учителей', key: 'teachers' }, { label: 'Сотрудники', key: 'staff' }],
+    fields: () => [{ name: 'date', label: 'Дата', type: 'date', required: true, default: today() }, { name: 'students', label: 'Учеников', type: 'number', min: 0, required: true }, { name: 'teachers', label: 'Учителей', type: 'number', min: 0, required: true }, { name: 'staff', label: 'Сотрудники', type: 'number', min: 0 }],
+    create: (d) => api('POST', '/api/stats/school', d), remove: (r) => api('DELETE', `/api/stats/school/${r.date}`) }),
+  mastery: async () => crud({ title: 'Усвоение предметов', hideTitle: true, load: () => api('GET', '/api/stats').then((s) => [...s.mastery].sort((a, b) => b.date.localeCompare(a.date) || a.subject.localeCompare(b.subject))),
+    columns: [{ label: 'Дата', render: (r) => fmtD(r.date) }, { label: 'Предмет', key: 'subject' }, { label: 'Усвоение, %', render: (r) => `${r.percent}%` }],
+    fields: () => [{ name: 'date', label: 'Дата', type: 'date', required: true, default: today() }, { name: 'subject', label: 'Предмет', required: true }, { name: 'percent', label: 'Усвоение, %', type: 'number', min: 0, required: true }],
+    create: (d) => api('POST', '/api/stats/mastery', d), remove: (r) => api('DELETE', `/api/stats/mastery/${r.id}`) }),
 };
 
 // ---------- сотрудники ----------

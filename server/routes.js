@@ -221,6 +221,7 @@ function buildRoutes({ db, notifier, uploadsDir }) {
         };
       });
       out.pending_achievements = one("SELECT COUNT(*) c FROM achievements WHERE status='pending'").c;
+      out.tasks_overdue = one("SELECT COUNT(*) c FROM tasks WHERE status='open' AND due_date IS NOT NULL AND due_date < ?", t.date).c;
       out.counts = {
         students: one('SELECT COUNT(*) c FROM students WHERE active=1').c,
         teachers: one("SELECT COUNT(*) c FROM users WHERE active=1 AND role='teacher'").c,
@@ -491,10 +492,36 @@ function buildRoutes({ db, notifier, uploadsDir }) {
 
   // ================= ПОРУЧЕНИЯ =================
   const TASK_SQL = `SELECT t.*, a.full_name AS assignee_name FROM tasks t JOIN users a ON a.id=t.assignee_id`;
+  // Итог по поручению: on_time — выполнено в срок, late — выполнено с опозданием,
+  // overdue — срок прошёл, а не выполнено, open — ещё в работе.
+  const taskOutcome = (t, todayDate) => {
+    if (t.status === 'done') {
+      if (!t.due_date || !t.done_at) return 'on_time';
+      // done_at хранится в UTC — переводим в дату по часовому поясу школы
+      const doneDay = localNow(new Date(String(t.done_at).replace(' ', 'T') + 'Z'), getSettings(db).timezone).date;
+      return doneDay <= t.due_date ? 'on_time' : 'late';
+    }
+    return t.due_date && t.due_date < todayDate ? 'overdue' : 'open';
+  };
+  const withOutcome = (rows) => { const td = today().date; return rows.map((t) => ({ ...t, outcome: taskOutcome(t, td) })); };
   get('/api/tasks', 'auth', ({ user }) =>
-    A.isManager(user)
+    withOutcome(A.isManager(user)
       ? all(`${TASK_SQL} ORDER BY (t.status='open') DESC, t.due_date IS NULL, t.due_date, t.id DESC LIMIT 300`)
-      : all(`${TASK_SQL} WHERE t.assignee_id=? ORDER BY (t.status='open') DESC, t.due_date IS NULL, t.due_date, t.id DESC`, user.id));
+      : all(`${TASK_SQL} WHERE t.assignee_id=? ORDER BY (t.status='open') DESC, t.due_date IS NULL, t.due_date, t.id DESC`, user.id)));
+  // Сводка по исполнителям: сколько поручений выполнено вовремя, с опозданием, не выполнено.
+  get('/api/tasks/stats', 'auth', ({ user }) => {
+    const td = today().date;
+    const people = A.isManager(user)
+      ? all("SELECT id, full_name, subject FROM users WHERE active=1 AND role IN ('teacher','staff','assistant') ORDER BY full_name")
+      : [{ id: user.id, full_name: user.full_name, subject: user.subject }];
+    return people.map((u) => {
+      const st = { on_time: 0, late: 0, overdue: 0, open: 0 };
+      for (const t of all('SELECT status, due_date, done_at FROM tasks WHERE assignee_id=?', u.id)) st[taskOutcome(t, td)]++;
+      const total = st.on_time + st.late + st.overdue + st.open;
+      const closed = st.on_time + st.late + st.overdue;
+      return { user_id: u.id, full_name: u.full_name, subject: u.subject, total, ...st, rate: closed ? Math.round((st.on_time / closed) * 100) : null };
+    });
+  });
   post('/api/tasks', 'manager', ({ user, body }) => {
     const assignee = must(one('SELECT * FROM users WHERE id=? AND active=1', int(body.assignee_id, 0, 1)), 'Исполнитель не найден');
     const r = run('INSERT INTO tasks (title, description, assignee_id, created_by, due_date) VALUES (?,?,?,?,?)',
@@ -511,6 +538,30 @@ function buildRoutes({ db, notifier, uploadsDir }) {
     return { ok: true };
   });
   del('/api/tasks/:id', 'manager', ({ params }) => { run('DELETE FROM tasks WHERE id=?', params.id); return { ok: true }; });
+
+  // ================= СТАТИСТИКА (только руководство) =================
+  get('/api/stats', 'manager', () => ({
+    school: all('SELECT * FROM stats_school ORDER BY date'),
+    mastery: all('SELECT * FROM stats_mastery ORDER BY subject, date'),
+    current: {
+      students: one('SELECT COUNT(*) c FROM students WHERE active=1').c,
+      teachers: one("SELECT COUNT(*) c FROM users WHERE active=1 AND role='teacher'").c,
+    },
+  }));
+  post('/api/stats/school', 'manager', ({ body }) => {
+    run(`INSERT INTO stats_school (date, students, teachers, staff) VALUES (?,?,?,?)
+         ON CONFLICT(date) DO UPDATE SET students=excluded.students, teachers=excluded.teachers, staff=excluded.staff`,
+      date(body.date), int(body.students, 0, 0, 100000), int(body.teachers, 0, 0, 10000), int(body.staff, 0, 0, 10000));
+    return { ok: true };
+  });
+  del('/api/stats/school/:date', 'manager', ({ params }) => { run('DELETE FROM stats_school WHERE date=?', params.date); return { ok: true }; });
+  post('/api/stats/mastery', 'manager', ({ body }) => {
+    run(`INSERT INTO stats_mastery (date, subject, percent) VALUES (?,?,?)
+         ON CONFLICT(date, subject) DO UPDATE SET percent=excluded.percent`,
+      date(body.date), str(body.subject, 60, true, 'предмет'), int(body.percent, 0, 0, 100));
+    return { ok: true };
+  });
+  del('/api/stats/mastery/:id', 'manager', ({ params }) => { run('DELETE FROM stats_mastery WHERE id=?', params.id); return { ok: true }; });
 
   // ================= НАСТРОЙКИ =================
   const SETTING_KEYS = ['school_name', 'city', 'motto', 'address', 'phone', 'email', 'hero_image', 'about_image', 'video_url', 'clubs_count', 'telegram_url', 'youtube_url', 'instagram_url', 'facebook_url', 'school_lat', 'school_lon', 'radius_m', 'grace_minutes', 'timezone'];

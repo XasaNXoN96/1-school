@@ -159,6 +159,21 @@ CREATE TABLE IF NOT EXISTS announcement_targets (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   PRIMARY KEY (announcement_id, user_id)
 );
+
+-- Статистика школы: динамика числа учеников/учителей и усвоения предметов (вносит администратор)
+CREATE TABLE IF NOT EXISTS stats_school (
+  date TEXT PRIMARY KEY,
+  students INTEGER NOT NULL DEFAULT 0,
+  teachers INTEGER NOT NULL DEFAULT 0,
+  staff INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS stats_mastery (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  date TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  percent INTEGER NOT NULL CHECK (percent BETWEEN 0 AND 100),
+  UNIQUE (date, subject)
+);
 CREATE INDEX IF NOT EXISTS idx_lessons_teacher ON lessons(teacher_id, weekday);
 CREATE INDEX IF NOT EXISTS idx_plans_user ON plans(user_id, date);
 CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(date);

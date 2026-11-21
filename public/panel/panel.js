@@ -5,7 +5,7 @@ import { lang, setLang, LANGS } from '/js/i18n.js';
 const app = document.getElementById('app');
 const logo = (size = 44) => h('img', { src: '/img/logo.svg', alt: '', width: size, height: size });
 
-const MENU_MANAGER = [['dashboard', 'Главная', 'home'], ['users', 'Пользователи', 'users'], ['lessons', 'Расписание уроков', 'calendar'], ['tasks', 'Поручения', 'clipboard'], ['students', 'Ученики', 'cap'],
+const MENU_MANAGER = [['dashboard', 'Главная', 'home'], ['stats', 'Статистика', 'trend'], ['users', 'Пользователи', 'users'], ['lessons', 'Расписание уроков', 'calendar'], ['tasks', 'Поручения', 'clipboard'], ['students', 'Ученики', 'cap'],
   ['news', 'Новости', 'news'], ['announcements', 'Объявления', 'megaphone'], ['media', 'Медиа (фото/видео)', 'image'], ['pages', 'О школе', 'book'], ['achievements', 'Достижения', 'trophy'], ['reports', 'Отчёты', 'chart'], ['settings', 'Настройки', 'settings']];
 const MENU_STAFF = [['dashboard', 'Главная', 'home'], ['lessons', 'Мои уроки', 'calendar'], ['tasks', 'Задания', 'clipboard'], ['students', 'Ученики', 'cap'], ['achievements', 'Достижения', 'trophy'],
   ['attendance', 'Посещаемость', 'check'], ['salary', 'Зарплата', 'chart'], ['messages', 'Сообщения', 'mail'], ['announcements', 'Объявления', 'megaphone'], ['plans', 'Мои планы', 'clock'], ['profile', 'Профиль', 'user']];
