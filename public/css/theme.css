@@ -1,0 +1,23 @@
+/* ТЕМА САЙТА — все цвета, шрифты и скругления берутся отсюда. */
+:root {
+  --color-bg: #f2f6fd;
+  --color-surface: #ffffff;
+  --color-text: #14233f;
+  --color-muted: #5b6b86;
+  --color-primary: #0f3f9e;
+  --color-primary-dark: #0a2c75;
+  --color-primary-contrast: #ffffff;
+  --color-accent: #f5a60a;
+  --color-accent-dark: #d58a00;
+  --color-border: #dde6f3;
+  --color-danger: #c62828;
+  --color-ok: #2e7d32;
+  --color-footer: #0a2c75;
+  --radius: 16px;
+  --radius-sm: 10px;
+  --shadow: 0 8px 30px rgba(15, 63, 158, .08);
+  --font-body: "Inter", "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+  --font-heading: "Poppins", "Inter", "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+  --container: 1240px;
+  --header-h: 72px;
+}
