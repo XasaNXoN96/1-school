@@ -75,7 +75,7 @@ const s8 = S('Shahnoza Ismoilova', '9-B', 's4');
 const s9 = S('Sardor Ergashev', '8-A', 's5');
 
 const sa = db.prepare("INSERT INTO achievements (kind, student_id, title, description, date, photo, status) VALUES ('student',?,?,?,?,?, 'published')");
-sa.run(s1, "Informatika olimpiadasi – 1-o'rin", "Viloyat bosqichida 120 nafar ishtirokchi orasida birinchi o'rinni egalladi va respublika bosqichiga yo'llanma oldi.", '2026-10-12', PH('olympiad'));
+sa.run(s1, "Informatika olimpiadasi – 1-o'rin", "Viloyat bosqichida 120 nafar ishtirokchi orasida birinchi o'rinni egalladi va respublika bosqichiga yo'llanma oldi.", '2026-10-12', '');
 sa.run(s2, "Matematika olimpiadasi – 2-o'rin", "Murakkab masalalarni original usulda yechgani uchun hakamlar hay'ati alohida e'tirof etdi.", '2026-10-08', '');
 sa.run(s3, 'IELTS 7.5 sertifikati', "Umumiy natija 7.5 ball. Tayyorgarlik maktabdagi ingliz tili to'garagida o'tdi.", '2026-10-03', '');
 sa.run(s5, 'SAT — 1480 ball', "Xalqaro imtihonda 1600 balldan 1480 ball to'pladi. Xorijdagi universitetlarga hujjat topshirmoqda.", '2026-09-27', '');
@@ -135,6 +135,32 @@ const plan = db.prepare('INSERT INTO plans (user_id, title, date, time) VALUES (
 plan.run(T.t1, "Ota-onalar yig'ilishiga tayyorgarlik", d(2), '15:00');
 plan.run(T.t1, "Olimpiada mashg'uloti", d(4), '14:00');
 plan.run(T.t1, "Nazorat ishi varaqlarini tekshirish", d(1), '16:30');
+
+
+// Страницы «О школе» (вымышленная история — для демонстрации)
+const page = db.prepare('UPDATE pages SET body=?, image=? WHERE slug=?');
+page.run(`1-sonli umumiy o'rta ta'lim maktabi Gagarin shahrining eng qadimiy va nufuzli maktablaridan biri bo'lib, bugun bu yerda 900 dan ortiq o'quvchi 60 nafar malakali ustoz rahbarligida bilim oladi.
+
+Tarix. Maktab 1967-yil 1-sentabrda shaharning birinchi umumta'lim maktabi sifatida ochilgan. Uning asoschisi va dastlabki direktori — xalq ta'limi a'lochisi Abdurahim Qodirov bo'lib, u dastlabki yillarda 320 nafar o'quvchi va 18 nafar ustoz bilan ish boshlagan. Bir qavatli kichik binoda boshlangan faoliyat qisqa vaqtda shahar ahli e'tiborini qozongan.
+
+1985-yilda ikki qavatli yangi bino foydalanishga topshirildi, kutubxona va sport zali ochildi. 1998-yilda maktabda shaharda birinchi bo'lib kompyuter xonasi tashkil etildi. 2012-yilda bino to'liq ta'mirlanib, zamonaviy fizika va kimyo laboratoriyalari bilan jihozlandi.
+
+So'nggi yillarda maktab aniq fanlar va xorijiy tillarni chuqur o'rgatish bo'yicha tajriba maktabi sifatida tanilgan. O'quvchilarimiz respublika olimpiadalarida, IELTS va SAT kabi xalqaro imtihonlarda yuqori natijalar ko'rsatmoqda.
+
+Qadriyatlarimiz. Hurmat, mas'uliyat, mehnatsevarlik va bilimga intilish — maktabimiz hayotining asosi. Biz har bir o'quvchining iqtidorini ochishga va uni jamiyatga foydali shaxs qilib tarbiyalashga intilamiz.
+
+(Eslatma: bu matn namuna sifatida yozilgan. Haqiqiy tarixni boshqaruv panelida «Maktab haqida» bo'limida tahrirlang.)`, PH('building'), 'about');
+page.run(`Maktabda 1–11-sinflar uchun umumta'lim dasturi o'qitiladi: ona tili va adabiyot, matematika, informatika, fizika, kimyo, biologiya, tarix, geografiya, ingliz va rus tillari, jismoniy tarbiya.
+
+Chuqurlashtirilgan yo'nalishlar: matematika va informatika, ingliz tili (IELTS tayyorgarligi).
+
+To'garaklar: dasturlash va robototexnika, shaxmat, futbol, milliy raqs, rasm, kitobxonlik klubi.`, '', 'programs');
+page.run(`Manzil: Gagarin shahri, 1-sonli umumiy o'rta ta'lim maktabi.
+
+Telefon: +998 00 000-00-00.
+
+Qabul vaqti: dushanba–shanba, 09:00–17:00. Direktor qabuli: payshanba kunlari 15:00–17:00.`, '', 'contacts');
+setSetting(db, 'about_image', PH('staff'));
 
 setSetting(db, 'clubs_count', '15+');
 setSetting(db, 'address', 'Gagarin shahri, 1-sonli umumiy o‘rta ta’lim maktabi');

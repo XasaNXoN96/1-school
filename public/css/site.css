@@ -222,3 +222,9 @@ article.prose .embed { margin: 14px 0; display: block; }
   .brand small { display: none; } .hero-btns .btn { flex: 1 1 100%; justify-content: center; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+
+/* единая высота фото в карточках: кадр от макушки вниз */
+.teach-ph, .person-ph { position: relative; overflow: hidden; }
+.teach-ph img, .person-ph img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center top; }
+.card .cover { object-position: center top; }
+.card .cover.portrait { aspect-ratio: 1 / 1; object-position: center top; }
