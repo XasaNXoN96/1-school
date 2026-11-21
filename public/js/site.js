@@ -102,7 +102,7 @@ const newsCard = (n) => h('a', { class: 'card-link', href: `#/news/${n.id}` }, h
   n.cover ? h('img', { class: 'cover', src: imgUrl(n.cover), alt: '', loading: 'lazy' }) : h('div', { class: 'cover ph' }, icon('news', 36)),
   h('div', { class: 'pad' }, h('div', { class: 'meta' }, fmtDate(n.created_at)), h('h3', {}, n.title), n.summary && h('p', { class: 'muted' }, n.summary))));
 const achCard = (a) => h('div', { class: 'card' },
-  a.photo ? h('img', { class: 'cover', src: imgUrl(a.photo), alt: '', loading: 'lazy' }) : null,
+  (a.photo || a.student_photo || a.teacher_photo) ? h('img', { class: 'cover', src: imgUrl(a.photo || a.student_photo || a.teacher_photo), alt: '', loading: 'lazy' }) : null,
   h('div', { class: 'pad' }, h('div', { class: 'meta' }, fmtDate(a.date)), h('h3', {}, a.title),
     h('div', {}, a.kind === 'student' ? `${a.student_name || ''}${a.class_name ? `, ${a.class_name} ${t('class')}` : ''}` : (a.teacher_name || '')),
     a.description && h('p', { class: 'muted' }, a.description)));
@@ -148,7 +148,7 @@ const views = {
     // ученики
     const seen = new Set(), top = [];
     if (spot.student) { seen.add(spot.student.full_name); top.push({ name: spot.student.full_name, sub: spot.student.best_note || t('badge.student'), photo: spot.student.photo }); }
-    for (const a of ach) { if (top.length >= 3) break; if (a.student_name && !seen.has(a.student_name)) { seen.add(a.student_name); top.push({ name: a.student_name, sub: a.title, photo: a.photo }); } }
+    for (const a of ach) { if (top.length >= 3) break; if (a.student_name && !seen.has(a.student_name)) { seen.add(a.student_name); top.push({ name: a.student_name, sub: a.title, photo: a.student_photo || a.photo }); } }
     const medal = ['gold', 'silver', 'bronze'];
     const studentCol = panelBox(t('home.students'), 'trophy', '#/achievements', top.length
       ? h('div', { class: 'top-list' }, top.map((x, i) => h('div', { class: 'top-row' },

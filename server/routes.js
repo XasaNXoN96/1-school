@@ -126,7 +126,7 @@ function buildRoutes({ db, notifier, uploadsDir }) {
     const kind = query.kind === 'teacher' || query.kind === 'student' ? query.kind : null;
     return all(
       `SELECT a.id, a.kind, a.title, a.description, a.date, a.photo,
-              u.full_name AS teacher_name, s.full_name AS student_name, s.class_name
+              u.full_name AS teacher_name, u.photo AS teacher_photo, s.full_name AS student_name, s.photo AS student_photo, s.class_name
        FROM achievements a
        LEFT JOIN users u ON u.id = a.user_id AND u.show_public = 1
        LEFT JOIN students s ON s.id = a.student_id

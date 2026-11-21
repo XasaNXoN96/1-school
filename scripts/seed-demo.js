@@ -2,6 +2,7 @@
 // Заполняет БАЗУ ДЕМО-ДАННЫМИ для просмотра сайта. Только для локальной проверки!
 // Запуск:  node --disable-warning=ExperimentalWarning scripts/seed-demo.js --yes
 const path = require('node:path');
+const fs = require('node:fs');
 const { openDb, setSetting } = require('../server/db');
 const { hashPassword } = require('../server/auth');
 
@@ -50,3 +51,15 @@ setSetting(db, 'address', 'Gagarin shahri, 1-sonli umumiy o‘rta ta’lim makta
 setSetting(db, 'phone', '+998 00 000-00-00');
 setSetting(db, 'email', 'school1@example.uz');
 console.log(`Готово. Демо-вход: director / ${PASSWORD}`);
+
+// Демо-фотографии (скопировать в uploads и привязать)
+const upDir = path.join(dataDir, 'uploads'); fs.mkdirSync(upDir, { recursive: true });
+const PH = (n) => { const f = n + '.jpg'; fs.copyFileSync(path.join(__dirname, 'demo-photos', f), path.join(upDir, f)); return f; };
+db.prepare("UPDATE users SET photo=? WHERE username='teacher1'").run(PH('ba60910c6731b3ad442a3d988d8880ce'));
+db.prepare("UPDATE users SET photo=? WHERE username='teacher2'").run(PH('aa2f6802217bc482b913ec7b86aa7fbd'));
+const setS = db.prepare('UPDATE students SET photo=? WHERE id=?');
+setS.run(PH('5e5545d38a68148a2d5bd5ec9a89e327'), s1);
+setS.run(PH('213ee683360d88249109c2f92789dbc3'), s2);
+setS.run(PH('8e4947690532bc44a8e41e9fb365b76a'), s3);
+setS.run(PH('166a50c910e390d922db4696e4c7747b'), 4);
+db.prepare("UPDATE users SET show_public=0 WHERE username='teacher3'").run(); // на сайте у третьего учителя нет фото
