@@ -280,7 +280,7 @@ views.users = async () => crud({ title: 'Пользователи', load: () => 
   fields: (ex) => [
     ...(ex ? [] : [{ name: 'username', label: 'Логин', required: true }, { name: 'password', label: 'Пароль (мин. 8 символов)', type: 'password', required: true },
       { name: 'role', label: 'Роль', type: 'select', options: [['teacher', T('Учитель')], ['staff', T('Сотрудник')], ...(state.me.role === 'director' ? [['assistant', T('Ассистент директора')]] : [])] }]),
-    { name: 'full_name', label: 'ФИО', required: true }, { name: 'subject', label: 'Предмет / должность' }, { name: 'phone', label: 'Телефон' },
+    { name: 'full_name', label: 'ФИО', required: true }, { name: 'subject', label: 'Предмет / должность' }, { name: 'phone', label: 'Телефон' }, { name: 'birthday', label: 'Дата рождения', type: 'date' },
     { name: 'monthly_salary', label: 'Оклад за месяц, сум', type: 'number', min: 0 }, { name: 'shift_start', label: 'Начало смены', type: 'time', default: '09:00' }, { name: 'shift_end', label: 'Конец смены', type: 'time', default: '14:00' },
     { name: 'work_days', label: 'Рабочие дни', type: 'days' }, { name: 'photo', label: 'Фото', type: 'image' }, { name: 'bio', label: 'О себе (виден на сайте)', type: 'textarea', wide: true },
     { name: 'show_public', label: 'Показывать на сайте в списке учителей', type: 'checkbox', default: 1 },
@@ -368,8 +368,9 @@ views.announcements = async () => {
   }
   const root = h('div'), body = h('div');
   const users = (await api('GET', '/api/users')).filter((u) => u.id !== state.me.id);
-  const staffView = () => crud({ title: 'Объявления', hideTitle: true, addLabel: '+ Новое объявление', load: () => api('GET', '/api/announcements'),
-    columns: [{ label: 'Заголовок', render: (a) => h('div', {}, h('b', {}, a.title), a.body ? h('div', { class: 'muted' }, a.body.slice(0, 120)) : null) }, { label: 'Кому', render: (a) => (a.to_all ? pill(T('Всем'), 'info') : a.targets.map((t) => t.full_name).join(', ')) }, { label: 'Дата', render: (a) => fmtD(a.created_at) }],
+  let readers = {};
+  const staffView = () => crud({ title: 'Объявления', hideTitle: true, addLabel: '+ Новое объявление', load: async () => { const [l, r] = await Promise.all([api('GET', '/api/announcements'), api('GET', '/api/announcements/reads')]); readers = r.readers || {}; return l; },
+    columns: [{ label: 'Заголовок', render: (a) => h('div', {}, h('b', {}, a.title), a.body ? h('div', { class: 'muted' }, a.body.slice(0, 120)) : null) }, { label: 'Прочитали', render: (a) => { const r = readers[a.id] || []; return h('span', { title: r.join(', ') }, pill(`${r.length}`, r.length ? 'ok' : '')); } }, { label: 'Кому', render: (a) => (a.to_all ? pill(T('Всем'), 'info') : a.targets.map((t) => t.full_name).join(', ')) }, { label: 'Дата', render: (a) => fmtD(a.created_at) }],
     fields: () => [{ name: 'title', label: 'Заголовок', required: true, wide: true }, { name: 'body', label: 'Текст', type: 'textarea', wide: true }, { name: 'to_all', label: 'Отправить всем сотрудникам', type: 'checkbox', default: 1 },
       { name: 'user_ids', label: 'Или выберите получателей', type: 'users', options: users.map((u) => [u.id, u.full_name]) }],
     create: (d) => api('POST', '/api/announcements', d), remove: (a) => api('DELETE', `/api/announcements/${a.id}`) });
@@ -393,8 +394,8 @@ views.media = async () => {
   form.append(formPanel({ title: 'Загрузить фото, видео или аудио', submitLabel: 'Загрузить',
     fields: [{ name: 'kind', label: 'Тип', type: 'select', options: [['image', T('Фото')], ['video', T('Видео')], ['audio', T('Аудио')]], onchange: toggle },
       { name: 'file_image', label: 'Фото', type: 'image' }, { name: 'file_video', label: 'Видео (mp4, webm — до 150 МБ)', type: 'video', hidden: true }, { name: 'file_audio', label: 'Аудио (mp3, ogg, wav, m4a)', type: 'audio', hidden: true },
-      { name: 'title', label: 'Название' }, { name: 'caption', label: 'Подпись', wide: true }],
-    onSubmit: async (d) => { const f = d[`file_${d.kind}`]; if (!f) throw new Error(T('Сначала выберите файл')); await api('POST', '/api/media', { file: f, title: d.title, caption: d.caption }); await refresh(); msg(msgBox, T('Загружено'), true); } }));
+      { name: 'title', label: 'Название' }, { name: 'tour', label: 'Раздел виртуального тура (например: Библиотека; пусто — не в туре)' }, { name: 'caption', label: 'Подпись', wide: true }],
+    onSubmit: async (d) => { const f = d[`file_${d.kind}`]; if (!f) throw new Error(T('Сначала выберите файл')); await api('POST', '/api/media', { file: f, title: d.title, caption: d.caption, tour: d.tour }); await refresh(); msg(msgBox, T('Загружено'), true); } }));
   root.append(h('h1', {}, T('Медиа (фото, видео, аудио)')), msgBox, form, list);
   await refresh();
   return root;
@@ -437,7 +438,7 @@ views.settings = async () => {
   const pages = {
     account: async () => h('div', {}, accountForm(), telegramBox()),
     site: async () => formPanel({ title: 'Сайт', values: s, fields: [{ name: 'school_name', label: 'Название школы', required: true }, { name: 'city', label: 'Город' }, { name: 'motto', label: 'Девиз (на главной)', wide: true }, { name: 'address', label: 'Адрес', wide: true },
-      { name: 'phone', label: 'Телефон' }, { name: 'email', label: 'E-mail' }, { name: 'clubs_count', label: 'Кружков (например 15+)' }, { name: 'video_url', label: 'Ссылка на видео (кнопка на главной)' },
+      { name: 'phone', label: 'Телефон' }, { name: 'email', label: 'E-mail' }, { name: 'work_hours', label: 'Время работы (для сайта)' }, { name: 'clubs_count', label: 'Кружков (например 15+)' }, { name: 'video_url', label: 'Ссылка на видео (кнопка на главной)' },
       { name: 'telegram_url', label: 'Telegram (ссылка)' }, { name: 'youtube_url', label: 'YouTube (ссылка)' }, { name: 'instagram_url', label: 'Instagram (ссылка)' }, { name: 'facebook_url', label: 'Facebook (ссылка)' },
       { name: 'hero_image', label: 'Фон главной (пусто — стандартное фото)', type: 'image' }, { name: 'about_image', label: 'Фото в блоке «О школе»', type: 'image' }], onSubmit: save }),
     geo: async () => {

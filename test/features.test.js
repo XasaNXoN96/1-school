@@ -143,3 +143,47 @@ test('статистика школы: только руководство, upse
   assert.deepEqual(st.school.map((r) => r.students), [410, 600]);
   assert.deepEqual(st.mastery.map((r) => r.percent), [60, 80]);
 });
+
+test('события: публично видны только открытые; сотрудникам — и «для сотрудников»; права', async (t) => {
+  const { director, teacher, app } = await bootstrap(t);
+  const guest = app.client();
+  assert.equal((await teacher('POST', '/api/events', { title: 'X', date: '2026-12-01' })).status, 403);
+  assert.equal((await director('POST', '/api/events', { title: 'Открытое', date: '2026-12-01', audience: 'public', kind: 'competition' })).status, 200);
+  assert.equal((await director('POST', '/api/events', { title: 'Закрытое', date: '2026-12-02', audience: 'staff' })).status, 200);
+  assert.equal((await director('POST', '/api/events', { title: 'Плохая дата', date: '12-2026' })).status, 400);
+  assert.deepEqual((await guest('GET', '/api/public/events')).data.map((e) => e.title), ['Открытое']);
+  assert.equal((await teacher('GET', '/api/events')).data.events.length, 2);
+  assert.equal((await guest('GET', '/api/events')).status, 401);
+});
+
+test('заявки с сайта: валидация, ловушка для роботов, лимит; видит только руководство', async (t) => {
+  const { director, teacher, app } = await bootstrap(t);
+  const guest = app.client();
+  assert.equal((await guest('POST', '/api/public/apply', { kind: 'admission', name: 'Мама' })).status, 400); // нет контактов
+  assert.equal((await guest('POST', '/api/public/apply', { kind: 'contact', name: 'Мама', phone: '1' })).status, 400); // нет сообщения
+  assert.equal((await guest('POST', '/api/public/apply', { kind: 'admission', name: 'Робот', phone: '1', website: 'spam.example' })).status, 200);
+  assert.equal((await guest('POST', '/api/public/apply', { kind: 'admission', name: 'Мама', phone: '+998 90 000-00-00', child_name: 'Али', grade: '1' })).status, 200);
+  const list = (await director('GET', '/api/applications')).data;
+  assert.equal(list.length, 1); assert.equal(list[0].name, 'Мама'); // робот не сохранён
+  assert.equal((await teacher('GET', '/api/applications')).status, 403);
+  assert.equal((await director('GET', '/api/panel/dashboard')).data.new_applications, 1);
+  await director('POST', `/api/applications/${list[0].id}/done`, {});
+  assert.equal((await director('GET', '/api/applications')).data[0].status, 'done');
+  for (let i = 0; i < 4; i++) await guest('POST', '/api/public/apply', { kind: 'admission', name: `N${i}`, phone: '1' });
+  assert.equal((await guest('POST', '/api/public/apply', { kind: 'admission', name: 'ещё', phone: '1' })).status, 429);
+});
+
+test('журнал действий, рейтинг, «прочитано», резервная копия', async (t) => {
+  const { director, teacher, app } = await bootstrap(t);
+  await director('POST', '/api/faq', { question: 'Q?', answer: 'A' });
+  const log = (await director('GET', '/api/audit')).data;
+  assert.ok(log.some((r) => r.target === 'Вопросы и ответы'));
+  assert.equal((await teacher('GET', '/api/audit')).status, 403);
+  assert.equal((await director('GET', '/api/rating')).data.length >= 2, true);
+  assert.equal((await teacher('GET', '/api/rating')).status, 403);
+  const ann = (await director('POST', '/api/announcements', { title: 'Привет', to_all: true })).data;
+  assert.equal((await teacher('POST', `/api/announcements/${ann.id}/read`)).status, 200);
+  assert.deepEqual((await teacher('GET', '/api/announcements/reads')).data.mine, [ann.id]);
+  assert.equal(Object.values((await director('GET', '/api/announcements/reads')).data.readers)[0].length, 1);
+  assert.equal((await app.client()('GET', '/lite')).status, 200);
+});

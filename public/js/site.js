@@ -1,5 +1,5 @@
 import { h, api, imgUrl, paragraphs } from './common.js';
-import { t, lang, setLang, LANGS, fmtDate } from './i18n.js';
+import { t, lang, setLang, LANGS, fmtDate, monthName as mName } from './i18n.js';
 import { icon } from './icons.js';
 
 const app = document.getElementById('app');
@@ -16,13 +16,14 @@ const empty = (k) => h('div', { class: 'empty' }, t(k));
 function buildMenu() {
   return [
     { href: '#/', label: t('nav.home'), ico: 'home', match: (h0) => h0 === '#/' || h0 === '' },
-    { label: t('nav.about'), ico: 'info', match: (h0) => /^#\/(page\/(about|programs)|teachers)/.test(h0),
-      children: [['#/page/about', t('page.about')], ['#/page/programs', t('page.programs')], ['#/teachers', t('nav.teachers')]] },
+    { label: t('nav.about'), ico: 'info', match: (h0) => /^#\/(page\/(about|programs)|teachers|tour|faq)/.test(h0),
+      children: [['#/page/about', t('page.about')], ['#/page/programs', t('page.programs')], ['#/teachers', t('nav.teachers')], ['#/tour', t('nav.tour')], ['#/faq', t('nav.faq')]] },
     { href: '#/news', label: t('nav.news'), ico: 'news', match: (h0) => h0.startsWith('#/news') },
-    { label: t('nav.media'), ico: 'image', match: (h0) => /^#\/(media|announcements)/.test(h0),
-      children: [['#/media', t('nav.gallery')], ['#/announcements', t('nav.announcements')]] },
+    { label: t('nav.media'), ico: 'image', match: (h0) => /^#\/(media|announcements|events)/.test(h0),
+      children: [['#/media', t('nav.gallery')], ['#/announcements', t('nav.announcements')], ['#/events', t('nav.events')]] },
     { href: '#/achievements', label: t('nav.achievements'), ico: 'trophy', match: (h0) => h0.startsWith('#/achievements') },
-    { href: '#/page/contacts', label: t('nav.contact'), ico: 'check', match: (h0) => h0.startsWith('#/page/contacts') },
+    { href: '#/admission', label: t('nav.admission'), ico: 'cap', match: (h0) => h0.startsWith('#/admission') },
+    { href: '#/contact', label: t('nav.contact'), ico: 'phone', match: (h0) => /^#\/(contact|page\/contacts)/.test(h0) },
   ];
 }
 
@@ -120,6 +121,8 @@ const views = {
       api('GET', '/api/public/media'), api('GET', '/api/public/pages/about').catch(() => null),
       api('GET', '/api/public/spotlight'),
     ]);
+    const todayStr = ymd(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
+    const [evs, tour] = await Promise.all([api('GET', `/api/public/events?from=${todayStr}`).catch(() => []), api('GET', '/api/public/tour').catch(() => [])]);
     const media = mediaAll.filter((m) => m.kind === 'photo');
     const heroImg = site.hero_image ? imgUrl(site.hero_image) : '/img/hero.jpg';
     const s = site.stats || {};
@@ -134,7 +137,7 @@ const views = {
             h('a', { class: 'btn amber', href: '#/page/about' }, icon('book', 20), t('hero.about')),
             site.video_url ? h('a', { class: 'btn ghost', href: site.video_url, target: '_blank', rel: 'noopener noreferrer' }, icon('play', 20), t('hero.video')) : null))));
     const statItems = stats.map(([ico, v, k]) =>
-      h('div', { class: 'stat' }, icon(ico, 38), h('div', {}, h('b', {}, String(v)), h('span', {}, t(k)))));
+      h('div', { class: 'stat' }, icon(ico, 38), h('div', {}, h('b', { 'data-count': /^\d+$/.test(String(v)) ? String(v) : null }, String(v)), h('span', {}, t(k)))));
     const statBar = h('div', { class: 'container' }, h('div', { class: 'stat-bar' }, statItems));
 
     // новости
@@ -167,8 +170,17 @@ const views = {
     const annBox = panelBox(t('home.announcements'), 'megaphone', '#/announcements', ann.length
       ? h('div', { class: 'ann-list' }, ann.map((n) => h('a', { href: `#/news/${n.id}` }, icon('calendar', 20), h('span', {}, h('b', {}, n.title), h('small', {}, fmtDate(n.created_at))), icon('right', 18)))) : empty('empty.ann'));
 
-    return [hero, statBar,
-      h('div', { class: 'container triple' }, newsCol, teacherCol, studentCol), banners,
+    const evBox = panelBox(t('home.events'), 'calendar', '#/events', evs.length
+      ? h('ul', { class: 'ev-list compact' }, evs.slice(0, 4).map(evRow)) : empty('home.noevents'));
+    const admBox = h('section', { class: 'box adm-cta' }, h('span', { class: 'deco' }, icon('cap', 160)), h('h2', {}, t('home.adm')), h('p', {}, t('home.adm.sub')),
+      h('div', { class: 'hero-btns' }, h('a', { class: 'btn amber', href: '#/admission' }, icon('check', 18), t('home.adm.btn')),
+        site.phone ? h('a', { class: 'btn ghost', href: `tel:${site.phone.replace(/[^+\d]/g, '')}` }, icon('phone', 18), site.phone) : null));
+    const tourStrip = tour.length ? h('div', { class: 'container' }, h('a', { class: 'tour-strip', href: '#/tour' },
+      h('div', { class: 'tour-pics' }, tour.slice(0, 4).map((x) => h('img', { src: imgUrl(x.file), alt: '', loading: 'lazy' }))),
+      h('div', { class: 'tour-text' }, h('h2', {}, icon('route', 28), t('home.tour')), h('p', {}, t('home.tour.sub')), h('span', { class: 'btn amber' }, icon('play', 18), t('home.tour.btn'))))) : null;
+
+    return [hero, statBar, h('div', { class: 'container duo events-adm' }, evBox, admBox), tourStrip && h('div', { class: 'gap' }),
+      h('div', { class: 'container triple' }, newsCol, teacherCol, studentCol), tourStrip, banners,
       h('div', { class: 'container duo' }, aboutBox, annBox),
       media.length ? h('div', { class: 'container life' }, panelBox(t('home.life'), 'image', null, carousel(media))) : null,
       h('div', { class: 'container' }, h('div', { class: 'adv' }, h('div', { class: 'adv-title' }, icon('cap', 44), h('h2', {}, t('adv.title'))),
@@ -229,6 +241,116 @@ const views = {
   },
 };
 
+
+// ---------- формы заявок ----------
+function applyForm(kind) {
+  const isAdm = kind === 'admission';
+  const msg = h('div', { class: 'form-msg', role: 'status' });
+  const inp = (name, label, attrs = {}) => h('label', { class: attrs.wide ? 'wide' : '' }, h('span', {}, t(label)), attrs.area
+    ? h('textarea', { name, rows: 4, maxlength: 3000, required: attrs.req || null })
+    : h('input', { name, type: attrs.type || 'text', maxlength: 120, required: attrs.req || null, autocomplete: attrs.ac || 'off', inputmode: attrs.mode || null }));
+  const btn = h('button', { class: 'btn amber', type: 'submit' }, icon('send', 18), t('f.send'));
+  const form = h('form', { class: 'apply-form', novalidate: true,
+    onsubmit: async (e) => {
+      e.preventDefault();
+      const d = Object.fromEntries(new FormData(form));
+      if (!String(d.phone || '').trim() && !String(d.email || '').trim()) { msg.className = 'form-msg bad'; msg.textContent = t('f.need'); return; }
+      btn.disabled = true; msg.className = 'form-msg'; msg.textContent = t('f.sending');
+      try { await api('POST', '/api/public/apply', { ...d, kind }); form.reset(); msg.className = 'form-msg ok'; msg.textContent = t('f.ok'); }
+      catch (err) { msg.className = 'form-msg bad'; msg.textContent = err.message; }
+      btn.disabled = false;
+    } },
+  inp('name', isAdm ? 'f.parent' : 'f.name', { req: true, ac: 'name' }),
+  inp('phone', 'f.phone', { type: 'tel', ac: 'tel', mode: 'tel' }),
+  isAdm ? inp('child_name', 'f.child') : null, isAdm ? inp('grade', 'f.grade') : null,
+  inp('email', 'f.email', { type: 'email', ac: 'email' }),
+  isAdm ? null : inp('message', 'f.message', { area: true, wide: true, req: true }),
+  h('input', { class: 'hp', name: 'website', tabindex: '-1', autocomplete: 'off', 'aria-hidden': 'true' }),
+  h('div', { class: 'wide' }, btn, msg));
+  return form;
+}
+
+const WD = (i) => t(`wd.${i}`);
+const pad = (n) => String(n).padStart(2, '0');
+const ymd = (y, m, d) => `${y}-${pad(m + 1)}-${pad(d)}`;
+const evBadge = (e) => h('span', { class: `ev-kind k-${e.kind}` }, t(`ev.kind.${e.kind}`));
+const monthName = (y, m, style = 'long') => mName(m, style === 'long');
+const dateBox = (d) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d) || []; return h('span', { class: 'date-box' }, h('b', {}, String(+m[3] || '')), h('small', {}, monthName(+m[1], +m[2] - 1, 'short').replace('.', ''))); };
+const evRow = (e) => h('li', { class: 'ev-row' }, dateBox(e.date), h('div', {}, h('b', {}, e.title), h('div', { class: 'muted' }, [e.time, e.place].filter(Boolean).join(' · ')), e.description ? h('p', { class: 'muted' }, e.description) : null), evBadge(e));
+
+const extraViews = {
+  async events() {
+    const now = new Date(); let y = now.getFullYear(), m = now.getMonth();
+    const holder = h('div');
+    const draw = async () => {
+      const last = new Date(y, m + 1, 0).getDate();
+      let list = []; try { list = await api('GET', `/api/public/events?from=${ymd(y, m, 1)}&to=${ymd(y, m, last)}`); } catch { /* пусто */ }
+      const first = (new Date(y, m, 1).getDay() + 6) % 7, cells = [];
+      for (let i = 0; i < first; i++) cells.push(h('div', { class: 'cal-cell empty' }));
+      for (let d = 1; d <= last; d++) {
+        const day = list.filter((e) => e.date === ymd(y, m, d)), isToday = ymd(y, m, d) === ymd(now.getFullYear(), now.getMonth(), now.getDate());
+        cells.push(h('div', { class: `cal-cell${isToday ? ' today' : ''}${day.length ? ' has' : ''}` }, h('span', { class: 'n' }, String(d)),
+          day.slice(0, 2).map((e) => h('span', { class: `cal-ev k-${e.kind}`, title: e.title }, e.title)), day.length > 2 ? h('span', { class: 'cal-more' }, `+${day.length - 2}`) : null,
+          day.length ? h('span', { class: 'cal-dots' }, day.slice(0, 3).map((e) => h('i', { class: `k-${e.kind}` }))) : null));
+      }
+      const title = `${monthName(y, m)} ${y}`;
+      holder.replaceChildren(
+        h('div', { class: 'cal-head' }, h('button', { class: 'cal-nav', type: 'button', 'aria-label': t('ev.prev'), onclick: () => { m--; if (m < 0) { m = 11; y--; } draw(); } }, icon('left', 20)),
+          h('h3', {}, title), h('button', { class: 'cal-nav', type: 'button', 'aria-label': t('ev.next'), onclick: () => { m++; if (m > 11) { m = 0; y++; } draw(); } }, icon('right', 20))),
+        h('div', { class: 'cal-grid' }, [1, 2, 3, 4, 5, 6, 7].map((i) => h('div', { class: 'cal-wd' }, WD(i))), cells),
+        h('h3', { class: 'sub' }, t('ev.list')), list.length ? h('ul', { class: 'ev-list' }, list.map(evRow)) : empty('ev.none'));
+    };
+    await draw();
+    return block(t('ev.title'), holder);
+  },
+
+  async admission() {
+    const steps = [1, 2, 3, 4].map((i) => h('li', { class: 'step' }, h('span', { class: 'step-n' }, String(i)), h('div', {}, h('b', {}, t(`adm.s${i}`)), h('p', { class: 'muted' }, t(`adm.s${i}.t`)))));
+    const call = site.phone ? h('a', { class: 'btn outline', href: `tel:${site.phone.replace(/[^+\d]/g, '')}` }, icon('phone', 18), site.phone) : null;
+    return h('div', { class: 'container narrow' }, h('section', { class: 'page-block pad0' }, secHead(t('adm.title'), 'cap'), h('p', { class: 'lead' }, t('adm.lead')),
+      h('ol', { class: 'steps' }, steps), call, h('h3', { class: 'sub' }, t('adm.form')), h('div', { class: 'panel-card' }, applyForm('admission'))));
+  },
+
+  async tour() {
+    const list = await api('GET', '/api/public/tour').catch(() => []);
+    const spots = [...new Set(list.map((x) => x.tour))];
+    const holder = h('div'), tabs = h('div', { class: 'tabs', role: 'tablist' });
+    let cur = '';
+    const draw = () => {
+      tabs.replaceChildren(...[['', t('tour.all')], ...spots.map((x) => [x, x])].map(([k, label]) => h('button', { role: 'tab', class: k === cur ? 'active' : '', onclick: () => { cur = k; draw(); } }, label)));
+      const shown = list.filter((x) => !cur || x.tour === cur);
+      holder.replaceChildren(h('div', { class: 'tour-grid' }, shown.map((x) => h('figure', { class: 'tour-item', onclick: () => lightbox({ file: x.file, title: x.title }) },
+        h('img', { src: imgUrl(x.file), alt: x.title || x.tour, loading: 'lazy' }), h('figcaption', {}, h('small', {}, x.tour), h('b', {}, x.title || ''), x.caption ? h('span', {}, x.caption) : null)))));
+    };
+    if (!list.length) return block(t('tour.title'), empty('tour.empty'));
+    draw();
+    return block(t('tour.title'), [h('p', { class: 'lead' }, t('tour.lead')), tabs, holder]);
+  },
+
+  async faq() {
+    const list = await api('GET', '/api/public/faq').catch(() => []);
+    return h('div', { class: 'container narrow' }, h('section', { class: 'page-block pad0' }, secHead(t('faq.title'), 'help'),
+      list.length ? h('div', { class: 'faq' }, list.map((f) => h('details', {}, h('summary', {}, f.question), paragraphs(f.answer)))) : empty('faq.empty'),
+      h('p', {}, h('a', { class: 'btn outline', href: '#/contact' }, icon('mail', 18), t('faq.more')))));
+  },
+
+  async contact() {
+    const hasGeo = site.school_lat && site.school_lon;
+    const route = hasGeo ? `https://www.openstreetmap.org/directions?to=${encodeURIComponent(site.school_lat)}%2C${encodeURIComponent(site.school_lon)}` : null;
+    const row = (ico, label, val) => val ? h('li', {}, icon(ico, 22), h('span', {}, h('small', {}, label), val)) : null;
+    return h('div', { class: 'container' }, h('section', { class: 'page-block pad0' }, secHead(t('con.title'), 'mail'),
+      h('div', { class: 'contact-grid' },
+        h('div', { class: 'panel-card' }, h('p', { class: 'lead' }, t('con.lead')), applyForm('contact')),
+        h('div', { class: 'panel-card' }, h('ul', { class: 'con-list' },
+          row('pin', t('con.addr'), site.address), row('phone', t('foot.contact'), site.phone ? h('a', { href: `tel:${site.phone.replace(/[^+\d]/g, '')}` }, site.phone) : null),
+          row('mail', 'E-mail', site.email ? h('a', { href: `mailto:${site.email}` }, site.email) : null), row('clock', t('con.hours'), site.work_hours)),
+        h('div', { class: 'con-btns' }, site.phone ? h('a', { class: 'btn amber', href: `tel:${site.phone.replace(/[^+\d]/g, '')}` }, icon('phone', 18), t('con.call')) : null,
+          route ? h('a', { class: 'btn outline', href: route, target: '_blank', rel: 'noopener noreferrer' }, icon('route', 18), t('con.route')) : null,
+          site.telegram_url ? h('a', { class: 'btn outline', href: site.telegram_url, target: '_blank', rel: 'noopener noreferrer' }, icon('send', 18), 'Telegram') : null)))));
+  },
+};
+Object.assign(views, extraViews);
+
 function carousel(media) {
   const track = h('div', { class: 'car-track' }, media.map((m) => h('figure', { onclick: () => lightbox(m) }, h('img', { src: imgUrl(m.file), alt: m.title || '', loading: 'lazy' }))));
   const dots = h('div', { class: 'dots' });
@@ -255,6 +377,55 @@ function lightbox(m) {
   document.addEventListener('keydown', onKey);
 }
 
+
+// ---------- быстрые кнопки на телефоне, настройки отображения, анимации ----------
+function quickBar() {
+  const items = [site.phone && ['phone', 'quick.call', `tel:${site.phone.replace(/[^+\d]/g, '')}`], (site.school_lat && site.school_lon) && ['route', 'quick.route', `https://www.openstreetmap.org/directions?to=${encodeURIComponent(site.school_lat)}%2C${encodeURIComponent(site.school_lon)}`], ['mail', 'quick.write', '#/contact']].filter(Boolean);
+  return h('div', { class: 'quickbar' }, items.map(([ico, k, href]) => h('a', { href, target: href.startsWith('http') ? '_blank' : null, rel: 'noopener noreferrer' }, icon(ico, 20), h('span', {}, t(k)))));
+}
+
+const PREF = { get: (k, d) => { try { return localStorage.getItem(k) || d; } catch { return d; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } } };
+function applyPrefs() {
+  const th = PREF.get('theme', 'auto'), dark = th === 'dark' || (th === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  document.documentElement.dataset.fs = PREF.get('fs', '0');
+}
+function a11yWidget() {
+  const panel = h('div', { class: 'a11y-panel', hidden: true, role: 'dialog', 'aria-label': t('a11y.title') });
+  const seg = (key, opts) => h('div', { class: 'seg' }, opts.map(([v, label, ico]) => h('button', { type: 'button', class: PREF.get(key, key === 'fs' ? '0' : 'auto') === v ? 'on' : '', 'aria-pressed': String(PREF.get(key, key === 'fs' ? '0' : 'auto') === v),
+    onclick: () => { PREF.set(key, v); applyPrefs(); fill(); } }, ico ? icon(ico, 16) : null, label)));
+  const fill = () => panel.replaceChildren(h('b', {}, t('a11y.title')),
+    h('div', {}, h('small', {}, t('a11y.theme')), seg('theme', [['auto', t('a11y.auto')], ['light', t('a11y.light'), 'sun'], ['dark', t('a11y.dark'), 'moon']])),
+    h('div', {}, h('small', {}, t('a11y.size')), seg('fs', [['0', 'A'], ['1', 'A+'], ['2', 'A++']])),
+    h('a', { class: 'lite-link', href: '/lite' }, icon('monitor', 16), t('a11y.lite')));
+  fill();
+  const btn = h('button', { class: 'a11y-btn', type: 'button', 'aria-label': t('a11y.title'), title: t('a11y.title'), onclick: (e) => { e.stopPropagation(); panel.hidden = !panel.hidden; } }, icon('accessibility', 24));
+  panel.addEventListener('click', (e) => e.stopPropagation());
+  document.addEventListener('click', () => { panel.hidden = true; });
+  return h('div', { class: 'a11y' }, panel, btn);
+}
+function animateCount(el) {
+  const to = +el.dataset.count; if (!to || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const t0 = performance.now(), dur = 1400;
+  const step = (now) => { const k = Math.min(1, (now - t0) / dur), e = 1 - (1 - k) ** 3; el.textContent = String(Math.round(to * e)); if (k < 1) requestAnimationFrame(step); };
+  el.textContent = '0'; requestAnimationFrame(step);
+}
+let io = null;
+function enhance() {
+  if (!('IntersectionObserver' in window)) return;
+  io?.disconnect();
+  io = new IntersectionObserver((entries) => entries.forEach((en) => {
+    if (!en.isIntersecting) return;
+    en.target.classList.add('in');
+    en.target.querySelectorAll('[data-count]').forEach(animateCount);
+    io.unobserve(en.target);
+  }), { threshold: 0.12 });
+  document.documentElement.classList.add('js-reveal');
+  document.querySelectorAll('main .box, main .card-link, main .banner, main .adv, main .stat-bar, main .tour-strip, main .step, main .panel-card, main .ev-row, main details').forEach((el, i) => { el.classList.add('reveal'); el.style.setProperty('--d', `${(i % 4) * 70}ms`); io.observe(el); });
+}
+applyPrefs();
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('/sw.js').catch(() => {});
+
 async function route() {
   const hash = location.hash || '#/';
   const [, a, b] = hash.split('/');
@@ -263,16 +434,18 @@ async function route() {
   try {
     if (!a) view = await views.home();
     else if (a === 'news' && b) view = await views.newsItem(b);
-    else if (['news', 'announcements', 'media', 'achievements', 'teachers'].includes(a)) view = await views[a]();
+    else if (['news', 'announcements', 'media', 'achievements', 'teachers', 'events', 'admission', 'tour', 'faq', 'contact'].includes(a)) view = await views[a]();
     else if (a === 'page' && b) view = await views.page(b);
     else view = h('div', { class: 'container' }, empty('empty.page'));
   } catch (e) { view = h('div', { class: 'container' }, h('div', { class: 'empty' }, e.status === 404 ? t('empty.page') : t('err.load'))); }
-  app.replaceChildren(header(hash), h('main', {}, view), footer());
+  app.replaceChildren(header(hash), h('main', {}, view), footer(), quickBar(), a11yWidget());
+  enhance();
   document.title = `${site.school_name} — ${cityLabel()}`;
   window.scrollTo(0, 0);
 }
 
 (async function init() {
+  applyPrefs();
   try { site = await api('GET', '/api/public/site'); } catch { /* показываем значения по умолчанию */ }
   window.addEventListener('hashchange', route);
   route();

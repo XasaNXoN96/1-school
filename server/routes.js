@@ -93,7 +93,7 @@ function buildRoutes({ db, notifier, uploadsDir }) {
   // ================= ГОСТЕВОЙ РЕЖИМ =================
   get('/api/public/site', 'public', () => {
     const s = getSettings(db);
-    const pick = ['school_name', 'city', 'motto', 'address', 'phone', 'email', 'hero_image', 'about_image', 'video_url',
+    const pick = ['work_hours', 'school_name', 'city', 'motto', 'address', 'phone', 'email', 'hero_image', 'about_image', 'video_url',
       'clubs_count', 'telegram_url', 'youtube_url', 'instagram_url', 'facebook_url', 'school_lat', 'school_lon'];
     return {
       ...Object.fromEntries(pick.map((k) => [k, s[k]])),
@@ -221,6 +221,7 @@ function buildRoutes({ db, notifier, uploadsDir }) {
           late_minutes: r?.late_minutes ?? 0,
         };
       });
+      out.new_applications = one("SELECT COUNT(*) c FROM applications WHERE status='new'").c;
       out.pending_achievements = one("SELECT COUNT(*) c FROM achievements WHERE status='pending'").c;
       out.tasks_overdue = one("SELECT COUNT(*) c FROM tasks WHERE status='open' AND due_date IS NOT NULL AND due_date < ?", t.date).c;
       out.counts = {
@@ -257,6 +258,7 @@ function buildRoutes({ db, notifier, uploadsDir }) {
       shift_start: hhmm(b.shift_start, '09:00'), shift_end: hhmm(b.shift_end, '14:00'),
       work_days: workDays(b.work_days),
       best_note: str(b.best_note, 300),
+      birthday: /^\d{4}-\d{2}-\d{2}$|^$/.test(str(b.birthday, 10)) ? str(b.birthday, 10) : (() => { throw new HttpError(400, 'Некорректная дата рождения'); })(),
     };
     if (!f.work_days) throw new HttpError(400, 'Укажите хотя бы один рабочий день');
     if (toMin(f.shift_end) <= toMin(f.shift_start)) throw new HttpError(400, 'Конец смены должен быть позже начала');
@@ -282,6 +284,7 @@ function buildRoutes({ db, notifier, uploadsDir }) {
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       username, A.hashPassword(password), role, f.full_name, f.subject, f.phone, f.bio, f.photo, f.show_public,
       f.monthly_salary, f.shift_start, f.shift_end, f.work_days, newLinkCode());
+    run('UPDATE users SET birthday=? WHERE id=?', f.birthday, r.lastInsertRowid);
     return selfUser(one('SELECT * FROM users WHERE id=?', r.lastInsertRowid));
   });
 
@@ -300,6 +303,7 @@ function buildRoutes({ db, notifier, uploadsDir }) {
            shift_start=?, shift_end=?, work_days=?, best_note=?, is_best=? WHERE id=?`,
       f.full_name, f.subject, f.phone, f.bio, f.photo, f.show_public, f.monthly_salary,
       f.shift_start, f.shift_end, f.work_days, f.best_note, isBest, target.id);
+    run('UPDATE users SET birthday=? WHERE id=?', f.birthday, target.id);
     return selfUser(one('SELECT * FROM users WHERE id=?', target.id));
   });
 
@@ -430,8 +434,8 @@ function buildRoutes({ db, notifier, uploadsDir }) {
   post('/api/media', 'manager', ({ user, body }) => {
     const f = file(body.file);
     if (!f) throw new HttpError(400, 'Загрузите фото');
-    const r = run('INSERT INTO media (title, caption, file, kind, uploaded_by) VALUES (?,?,?,?,?)',
-      str(body.title, 200), str(body.caption, 500), f, mediaKind(f), user.id);
+    const r = run('INSERT INTO media (title, caption, file, kind, uploaded_by, tour) VALUES (?,?,?,?,?,?)',
+      str(body.title, 200), str(body.caption, 500), f, mediaKind(f), user.id, str(body.tour, 60));
     return one('SELECT * FROM media WHERE id=?', r.lastInsertRowid);
   });
   del('/api/media/:id', 'manager', ({ params }) => { run('DELETE FROM media WHERE id=?', params.id); return { ok: true }; });
@@ -662,6 +666,118 @@ function buildRoutes({ db, notifier, uploadsDir }) {
     return annRow(one('SELECT * FROM announcements WHERE id=?', r.lastInsertRowid));
   });
   del('/api/announcements/:id', 'manager', ({ params }) => { run('DELETE FROM announcements WHERE id=?', params.id); return { ok: true }; });
+
+  // ================= КАЛЕНДАРЬ, ЗАЯВКИ, FAQ, ЖУРНАЛ, РЕЙТИНГ =================
+  const EVENT_KINDS = ['event', 'meeting', 'competition', 'subbotnik', 'holiday', 'exam', 'other'];
+  const evRow = (b) => ({
+    title: str(b.title, 200, true, 'название'), description: str(b.description, 2000), date: date(b.date),
+    time: b.time ? hhmm(b.time) : '', place: str(b.place, 200),
+    kind: EVENT_KINDS.includes(b.kind) ? b.kind : 'event', audience: b.audience === 'staff' ? 'staff' : 'public',
+  });
+  // публично — только открытые события
+  get('/api/public/events', 'public', ({ query }) => {
+    const from = query.from ? date(query.from) : '0000-01-01', to = query.to ? date(query.to) : '9999-12-31';
+    return all("SELECT id, title, description, date, time, place, kind FROM events WHERE audience='public' AND date BETWEEN ? AND ? ORDER BY date, time, id LIMIT 300", from, to);
+  });
+  get('/api/public/faq', 'public', () => all('SELECT id, question, answer FROM faq ORDER BY sort, id'));
+  get('/api/public/tour', 'public', () => all("SELECT id, title, caption, file, tour FROM media WHERE kind='photo' AND tour != '' ORDER BY tour, id"));
+
+  // Заявки с сайта: не чаще 5 в час с одного адреса; поле website — «ловушка» для роботов.
+  const applyHits = new Map();
+  post('/api/public/apply', 'public', ({ req, body }) => {
+    if (body.website) return { ok: true }; // робот: молча «принимаем»
+    const ip = req.socket.remoteAddress || '', now = Date.now();
+    const hits = (applyHits.get(ip) || []).filter((t0) => now - t0 < 3600_000);
+    if (hits.length >= 5) throw new HttpError(429, 'Слишком много обращений. Попробуйте позже.');
+    applyHits.set(ip, [...hits, now]);
+    const kind = body.kind === 'contact' ? 'contact' : 'admission';
+    const name = str(body.name, 100, true, 'имя');
+    const phone = str(body.phone, 40), email = str(body.email, 120);
+    if (!phone && !email) throw new HttpError(400, 'Укажите телефон или e-mail');
+    if (kind === 'contact' && !str(body.message, 3000)) throw new HttpError(400, 'Напишите сообщение');
+    run('INSERT INTO applications (kind, name, phone, email, child_name, grade, message) VALUES (?,?,?,?,?,?,?)',
+      kind, name, phone, email, str(body.child_name, 100), str(body.grade, 20), str(body.message, 3000));
+    notifier.notify(all("SELECT id FROM users WHERE role IN ('director','assistant') AND active=1").map((u) => u.id),
+      `${kind === 'admission' ? '🎓 Новая заявка на поступление' : '✉️ Новое обращение с сайта'}: ${name}${phone ? ', ' + phone : ''}`);
+    return { ok: true };
+  });
+  get('/api/applications', 'manager', () => all('SELECT * FROM applications ORDER BY (status=\'new\') DESC, id DESC LIMIT 300'));
+  post('/api/applications/:id/done', 'manager', ({ params, body }) => {
+    must(one('SELECT 1 x FROM applications WHERE id=?', params.id));
+    run('UPDATE applications SET status=? WHERE id=?', body.reopen ? 'new' : 'done', params.id);
+    return { ok: true };
+  });
+  del('/api/applications/:id', 'manager', ({ params }) => { run('DELETE FROM applications WHERE id=?', params.id); return { ok: true }; });
+
+  // Календарь для панели: события (в т.ч. «для сотрудников») + дни рождения сотрудников
+  get('/api/events', 'auth', ({ query }) => {
+    const from = query.from ? date(query.from) : '0000-01-01', to = query.to ? date(query.to) : '9999-12-31';
+    return {
+      events: all('SELECT * FROM events WHERE date BETWEEN ? AND ? ORDER BY date, time, id LIMIT 500', from, to),
+      birthdays: all("SELECT id, full_name, birthday FROM users WHERE active=1 AND birthday != '' ORDER BY full_name")
+        .map((u) => ({ id: u.id, full_name: u.full_name, md: u.birthday.slice(5) })),
+    };
+  });
+  post('/api/events', 'manager', ({ user, body }) => {
+    const e = evRow(body);
+    const r = run('INSERT INTO events (title, description, date, time, place, kind, audience, created_by) VALUES (?,?,?,?,?,?,?,?)',
+      e.title, e.description, e.date, e.time, e.place, e.kind, e.audience, user.id);
+    if (e.audience === 'staff') notifier.notify(all("SELECT id FROM users WHERE active=1 AND frozen=0 AND id != ?", user.id).map((u) => u.id), `📅 ${e.title} — ${e.date}${e.time ? ' ' + e.time : ''}`);
+    return one('SELECT * FROM events WHERE id=?', r.lastInsertRowid);
+  });
+  put('/api/events/:id', 'manager', ({ params, body }) => {
+    must(one('SELECT 1 x FROM events WHERE id=?', params.id));
+    const e = evRow(body);
+    run('UPDATE events SET title=?, description=?, date=?, time=?, place=?, kind=?, audience=? WHERE id=?', e.title, e.description, e.date, e.time, e.place, e.kind, e.audience, params.id);
+    return one('SELECT * FROM events WHERE id=?', params.id);
+  });
+  del('/api/events/:id', 'manager', ({ params }) => { run('DELETE FROM events WHERE id=?', params.id); return { ok: true }; });
+
+  get('/api/faq', 'manager', () => all('SELECT * FROM faq ORDER BY sort, id'));
+  post('/api/faq', 'manager', ({ body }) => {
+    const r = run('INSERT INTO faq (question, answer, sort) VALUES (?,?,?)', str(body.question, 300, true, 'вопрос'), str(body.answer, 3000), int(body.sort, 0, 0, 9999));
+    return one('SELECT * FROM faq WHERE id=?', r.lastInsertRowid);
+  });
+  put('/api/faq/:id', 'manager', ({ params, body }) => {
+    must(one('SELECT 1 x FROM faq WHERE id=?', params.id));
+    run('UPDATE faq SET question=?, answer=?, sort=? WHERE id=?', str(body.question, 300, true, 'вопрос'), str(body.answer, 3000), int(body.sort, 0, 0, 9999), params.id);
+    return one('SELECT * FROM faq WHERE id=?', params.id);
+  });
+  del('/api/faq/:id', 'manager', ({ params }) => { run('DELETE FROM faq WHERE id=?', params.id); return { ok: true }; });
+
+  // Журнал действий: только директор и помощник
+  get('/api/audit', 'manager', ({ query }) =>
+    all('SELECT * FROM audit_log ORDER BY id DESC LIMIT ?', Math.min(int(query.limit, 100, 1, 500), 500)));
+
+  // Отметка «прочитано» для объявлений сотрудникам
+  post('/api/announcements/:id/read', 'auth', ({ user, params }) => {
+    must(one('SELECT 1 x FROM announcements WHERE id=?', params.id));
+    run('INSERT OR IGNORE INTO announcement_reads (announcement_id, user_id) VALUES (?,?)', params.id, user.id);
+    return { ok: true };
+  });
+  get('/api/announcements/reads', 'auth', ({ user }) => {
+    if (!A.isManager(user)) return { mine: all('SELECT announcement_id FROM announcement_reads WHERE user_id=?', user.id).map((r) => r.announcement_id), readers: {} };
+    const readers = {};
+    for (const r of all('SELECT r.announcement_id id, u.full_name FROM announcement_reads r JOIN users u ON u.id=r.user_id ORDER BY r.read_at')) (readers[r.id] ||= []).push(r.full_name);
+    return { mine: all('SELECT announcement_id FROM announcement_reads WHERE user_id=?', user.id).map((r) => r.announcement_id), readers };
+  });
+
+  // Рейтинг сотрудников месяца: 50% дисциплина (приходы без опозданий) + 50% поручения в срок
+  get('/api/rating', 'manager', ({ query }) => {
+    const m = query.month ? month(query.month) : currentMonth(db);
+    const td = today().date;
+    return all("SELECT id, full_name, subject, photo FROM users WHERE active=1 AND frozen=0 AND role IN ('teacher','staff')").map((u) => {
+      const att = all("SELECT status, late_minutes FROM attendance WHERE user_id=? AND substr(date,1,7)=? AND status IN ('present','absent')", u.id, m);
+      const present = att.filter((a) => a.status === 'present'), onTimeDays = present.filter((a) => !a.late_minutes).length;
+      const discipline = att.length ? Math.round((onTimeDays / att.length) * 100) : null;
+      const st = { on_time: 0, late: 0, overdue: 0 };
+      for (const t of all('SELECT status, due_date, done_at FROM tasks WHERE assignee_id=? AND due_date IS NOT NULL AND substr(due_date,1,7)=?', u.id, m)) { const o = taskOutcome(t, td); if (o in st) st[o]++; }
+      const closed = st.on_time + st.late + st.overdue, tasks = closed ? Math.round((st.on_time / closed) * 100) : null;
+      const parts = [discipline, tasks].filter((x) => x != null);
+      return { user_id: u.id, full_name: u.full_name, subject: u.subject, photo: u.photo, discipline, tasks, days: att.length, late_days: present.length - onTimeDays,
+        score: parts.length ? Math.round(parts.reduce((a, b) => a + b, 0) / parts.length) : null };
+    }).sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
+  });
 
   return routes;
 }

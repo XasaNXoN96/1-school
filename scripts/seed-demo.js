@@ -236,4 +236,52 @@ setSetting(db, 'clubs_count', '15+');
 setSetting(db, 'address', 'Gagarin shahri, 1-sonli umumiy o‘rta ta’lim maktabi');
 setSetting(db, 'phone', '+998 00 000-00-00');
 setSetting(db, 'email', 'school1@example.uz');
+
+// ---- События, заявки, вопросы и ответы, журнал, тур, дни рождения ----
+setSetting(db, 'work_hours', 'Du–Sh: 08:00–17:00 · Ya: dam olish kuni');
+setSetting(db, 'school_lat', '40.1000'); setSetting(db, 'school_lon', '67.8400');
+const ev = db.prepare('INSERT INTO events (title, description, date, time, place, kind, audience, created_by) VALUES (?,?,?,?,?,?,?,1)');
+for (const [add, title, descr, time, place, kind, aud] of [
+  [-9, "Ota-onalar yig'ilishi", "Birinchi chorak natijalari muhokama qilindi.", '17:00', 'Sinf xonalari', 'meeting', 'public'],
+  [-3, 'Hashar: maktab hovlisini obodonlashtirish', "Ustozlar va o'quvchilar birgalikda hovlini tozaladi.", '09:00', 'Maktab hovlisi', 'subbotnik', 'public'],
+  [1, "Pedagogik kengash", "Chorak yakunlari va o'quv rejasi. Ishtirok majburiy.", '15:00', "Direktor xonasi", 'meeting', 'staff'],
+  [2, "Ochiq eshiklar kuni", "Ota-onalar va bo'lajak o'quvchilar uchun maktab bilan tanishuv.", '10:00', 'Aktlar zali', 'event', 'public'],
+  [4, "Matematika olimpiadasi (maktab bosqichi)", "5–11-sinf o'quvchilari uchun.", '10:00', '201-xona', 'competition', 'public'],
+  [6, "Ota-onalar yig'ilishi", "Choraklik natijalar bo'yicha yig'ilish.", '17:00', "Sinf rahbarlari xonalari", 'meeting', 'public'],
+  [9, "Futbol turniri: maktablararo musobaqa", "Bizning jamoa 3 ta maktab bilan bellashadi.", '14:00', 'Maktab stadioni', 'competition', 'public'],
+  [12, "Hashar: bahorgi ko'kalamzorlashtirish", "Daraxt ko'chatlari ekiladi.", '09:00', 'Maktab hovlisi', 'subbotnik', 'public'],
+  [15, "IELTS / SAT tayyorlov imtihoni", "11-sinf o'quvchilari uchun sinov imtihoni.", '09:30', 'Kompyuter sinfi', 'exam', 'public'],
+  [19, "Yangi yil bayrami", "Konsert va sovg'alar.", '12:00', 'Aktlar zali', 'holiday', 'public'],
+  [22, "Ustozlar uchun malaka oshirish seminari", "Raqamli texnologiyalar bo'yicha.", '14:00', 'Kompyuter sinfi', 'meeting', 'staff'],
+  [27, "Chorak yakuni", "2-chorak yakunlari e'lon qilinadi.", '', '', 'event', 'public'],
+]) ev.run(title, descr, d(add), time, place, kind, aud);
+
+const fq = db.prepare('INSERT INTO faq (question, answer, sort) VALUES (?,?,?)');
+[["1-sinfga qabul qachon boshlanadi?", "Ariza qabuli har yili 1-yanvardan 31-avgustgacha davom etadi. Saytdagi «Qabul» bo'limida ariza qoldiring."],
+ ["Qaysi hujjatlar kerak?", "Tug'ilganlik haqida guvohnoma, ota-ona pasporti, tibbiy ma'lumotnoma (086) va 3x4 o'lchamdagi surat."],
+ ["Dars qachon boshlanadi?", "Darslar soat 08:30 da boshlanadi. Har bir dars 45 daqiqa, tanaffus 10 daqiqa."],
+ ["Maktabda qanday to'garaklar bor?", "Matematika, informatika, ingliz tili, shaxmat, futbol, rasm va xor to'garaklari. Ro'yxat «To'garaklar» sahifasida."],
+ ["Ovqatlanish tashkil etilganmi?", "Ha, maktab oshxonasida 1–4-sinflar uchun issiq ovqat beriladi."],
+ ["Direktor bilan qanday bog'lansam bo'ladi?", "«Aloqa» sahifasidagi shaklni to'ldiring yoki maktabga qo'ng'iroq qiling. Ish kunlarida 10:00–12:00 da qabul."]].forEach(([q, a], i) => fq.run(q, a, i));
+
+const app = db.prepare('INSERT INTO applications (kind, name, phone, email, child_name, grade, message, status, created_at) VALUES (?,?,?,?,?,?,?,?,datetime(\'now\', ?))');
+app.run('admission', 'Dilfuza Usmonova', '+998 90 123-45-67', '', 'Amir Usmonov', '1', '', 'new', '-3 hours');
+app.run('admission', 'Akmal Qodirov', '+998 93 555-12-34', 'akmal@example.uz', 'Madina Qodirova', '1', '', 'new', '-1 day');
+app.run('contact', 'Gulbahor Saidova', '+998 97 777-00-11', '', '', '', "Farzandim 5-sinfga ko'chib kelmoqchi. Qanday hujjatlar kerak?", 'new', '-2 days');
+app.run('admission', 'Sherzod Aliyev', '+998 99 222-33-44', '', 'Nilufar Aliyeva', '1', '', 'done', '-6 days');
+
+const tourMap = { 'Maktab binosi': "Tashqi ko'rinish", 'Bilim kuni': 'Aktlar zali', Konsert: 'Aktlar zali', 'IT haftaligi': 'Kompyuter sinfi', 'Kompyuter sinfi': 'Kompyuter sinfi', Kutubxona: 'Kutubxona', 'Futbol turniri': 'Sport maydoni', 'Pedagoglar jamoasi': "Ustozlar xonasi" };
+for (const [title, tour] of Object.entries(tourMap)) db.prepare('UPDATE media SET tour=? WHERE title=?').run(tour, title);
+
+const bd = (add, year) => { const x = new Date(Date.now() + add * 86400000); return `${year}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`; };
+[['teacher2', 2, 1990], ['teacher3', 5, 1988], ['teacher5', 11, 1985], ['teacher1', 20, 1983], ['teacher4', 40, 1992]].forEach(([u, add, y]) => db.prepare('UPDATE users SET birthday=? WHERE username=?').run(bd(add, y), u));
+
+const au = db.prepare("INSERT INTO audit_log (user_id, user_name, action, target, created_at) VALUES (?,?,?,?,datetime('now', ?))");
+[['Директор (демо)', 'добавил(а)/изменил(а)', 'Новости', '-35 minutes'], ['Директор (демо)', 'добавил(а)/изменил(а)', 'Поручения', '-2 hours'], ['Ассистент (демо)', 'добавил(а)/изменил(а)', 'Календарь', '-5 hours'],
+  ['Директор (демо)', 'изменил(а)', 'Настройки', '-1 day'], ['Директор (демо)', 'добавил(а)/изменил(а)', 'Объявления', '-1 day'], ['Ассистент (демо)', 'отметил(а)', 'Заявки', '-2 days'],
+  ['Директор (демо)', 'сменил(а) пароль', 'Сотрудники', '-3 days'], ['Директор (демо)', 'удалил(а)', 'Медиа', '-4 days'], ['Директор (демо)', 'скачал(а) резервную копию', 'База данных', '-6 days']]
+  .reverse().forEach(([n, a, t, ago]) => au.run(1, n, a, t, ago));
+const annIds = db.prepare('SELECT id FROM announcements').all().map((r) => r.id);
+const rd = db.prepare('INSERT OR IGNORE INTO announcement_reads (announcement_id, user_id) VALUES (?,?)');
+annIds.forEach((id, i) => [T.t1, T.t2, T.t3, T.t4].slice(0, 4 - (i % 3)).forEach((uid) => rd.run(id, uid)));
 console.log(`Готово. Демо-вход: director / ${PASSWORD}`);

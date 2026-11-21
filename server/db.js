@@ -174,6 +174,55 @@ CREATE TABLE IF NOT EXISTS stats_mastery (
   percent INTEGER NOT NULL CHECK (percent BETWEEN 0 AND 100),
   UNIQUE (date, subject)
 );
+-- Календарь школы (public — виден на сайте, staff — только сотрудникам)
+CREATE TABLE IF NOT EXISTS events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  date TEXT NOT NULL,
+  time TEXT NOT NULL DEFAULT '',
+  place TEXT NOT NULL DEFAULT '',
+  kind TEXT NOT NULL DEFAULT 'event',
+  audience TEXT NOT NULL DEFAULT 'public' CHECK (audience IN ('public','staff')),
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+-- Заявки с сайта: поступление и обращения к директору
+CREATE TABLE IF NOT EXISTS applications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL DEFAULT 'admission' CHECK (kind IN ('admission','contact')),
+  name TEXT NOT NULL,
+  phone TEXT NOT NULL DEFAULT '',
+  email TEXT NOT NULL DEFAULT '',
+  child_name TEXT NOT NULL DEFAULT '',
+  grade TEXT NOT NULL DEFAULT '',
+  message TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new','done')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS faq (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  question TEXT NOT NULL,
+  answer TEXT NOT NULL DEFAULT '',
+  sort INTEGER NOT NULL DEFAULT 0
+);
+-- Журнал действий в панели (кто и что изменил)
+CREATE TABLE IF NOT EXISTS audit_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER,
+  user_name TEXT NOT NULL DEFAULT '',
+  action TEXT NOT NULL,
+  target TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS announcement_reads (
+  announcement_id INTEGER NOT NULL REFERENCES announcements(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  read_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (announcement_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_events_date ON events(date);
+CREATE INDEX IF NOT EXISTS idx_audit_id ON audit_log(id);
 CREATE INDEX IF NOT EXISTS idx_lessons_teacher ON lessons(teacher_id, weekday);
 CREATE INDEX IF NOT EXISTS idx_plans_user ON plans(user_id, date);
 CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(date);
@@ -200,6 +249,7 @@ const DEFAULT_SETTINGS = {
   radius_m: '150',
   grace_minutes: '10',
   timezone: 'Asia/Tashkent',
+  work_hours: '',      // режим работы для сайта, например «Du–Sh 08:00–17:00»
 };
 
 const DEFAULT_PAGES = [
@@ -224,6 +274,8 @@ function openDb(file) {
   addColumn('news', 'kind', "TEXT NOT NULL DEFAULT 'news'");
   addColumn('users', 'frozen', 'INTEGER NOT NULL DEFAULT 0');
   addColumn('users', 'last_seen', 'TEXT');
+  addColumn('users', 'birthday', "TEXT NOT NULL DEFAULT ''");
+  addColumn('media', 'tour', "TEXT NOT NULL DEFAULT ''");
   addColumn('media', 'kind', "TEXT NOT NULL DEFAULT 'photo'");
   for (const c of ['image', 'video', 'audio', 'video_url']) addColumn('pages', c, "TEXT NOT NULL DEFAULT ''");
   const ins = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');

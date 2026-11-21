@@ -1,5 +1,6 @@
 'use strict';
 const http = require('node:http');
+const fs = require('node:fs');
 const path = require('node:path');
 const { HttpError, send, readBody, parseCookies, serveFile } = require('./http');
 const { openDb } = require('./db');
@@ -8,6 +9,7 @@ const { buildRoutes } = require('./routes');
 const { createNotifier } = require('./notify');
 const { runReminders } = require('./reminders');
 const { handleRawUpload } = require('./rawupload');
+const { renderLite } = require('./lite');
 
 const COOKIE = 'sid';
 
@@ -40,6 +42,12 @@ function createApp({ dbFile, dataDir, publicDir, cookieSecure = false, scheduler
       if (pathname.startsWith('/api/')) return await handleApi(req, res, url);
 
       if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'Метод не поддерживается');
+      if (pathname === '/lite' || pathname.startsWith('/lite/')) {
+        const html = renderLite(db, pathname, url.searchParams.get('lang'));
+        if (!html) throw new HttpError(404, 'Не найдено');
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache', 'Content-Security-Policy': "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'" });
+        return res.end(html);
+      }
       if (pathname.startsWith('/uploads/')) {
         if (serveFile(res, uploadsDir, pathname.slice('/uploads/'.length), { 'Cache-Control': 'public, max-age=604800, immutable' }, req)) return;
         throw new HttpError(404, 'Не найдено');
@@ -54,6 +62,20 @@ function createApp({ dbFile, dataDir, publicDir, cookieSecure = false, scheduler
     }
   });
 
+  // Журнал действий: кто и что менял (содержимое запросов не сохраняем — там могут быть пароли)
+  const AUDIT_LABELS = [['users', 'Сотрудники'], ['news', 'Новости'], ['announcements', 'Объявления'], ['media', 'Медиа'], ['pages', 'Страницы'],
+    ['students', 'Ученики'], ['achievements', 'Достижения'], ['tasks', 'Поручения'], ['events', 'Календарь'], ['faq', 'Вопросы и ответы'],
+    ['applications', 'Заявки'], ['settings', 'Настройки'], ['stats', 'Статистика'], ['attendance', 'Посещаемость'], ['holidays', 'Праздники'], ['lessons', 'Расписание']];
+  const AUDIT_VERBS = { POST: 'добавил(а)/изменил(а)', PUT: 'изменил(а)', DELETE: 'удалил(а)' };
+  function logAudit(user, method, pathname) {
+    const seg = pathname.split('/')[2] || '';
+    if (['ping', 'notices', 'upload', 'upload-raw', 'plans'].includes(seg)) return;
+    const label = (AUDIT_LABELS.find(([k]) => k === seg) || [seg, seg])[1];
+    let verb = AUDIT_VERBS[method] || method;
+    if (/\/freeze$/.test(pathname)) verb = 'заморозил(а)/разморозил(а)'; else if (/reset-password$/.test(pathname)) verb = 'сменил(а) пароль'; else if (/\/(done|read)$/.test(pathname)) verb = 'отметил(а)';
+    try { db.prepare('INSERT INTO audit_log (user_id, user_name, action, target) VALUES (?,?,?,?)').run(user.id, user.full_name, verb, label); } catch { /* журнал не должен ломать запрос */ }
+  }
+
   async function handleApi(req, res, url) {
     const method = req.method;
     if (method === 'POST' && url.pathname === '/api/upload-raw') {
@@ -62,6 +84,19 @@ function createApp({ dbFile, dataDir, publicDir, cookieSecure = false, scheduler
       const who = A.userFromToken(db, parseCookies(req.headers.cookie)[COOKIE]);
       A.requireRole(who, 'manager');
       return send(res, 200, await handleRawUpload(req, uploadsDir, url.searchParams.get('ext')), { 'Cache-Control': 'no-store' });
+    }
+    if (method === 'GET' && url.pathname === '/api/backup') {
+      const who = A.userFromToken(db, parseCookies(req.headers.cookie)[COOKIE]);
+      if (!who || who.role !== 'director') throw new HttpError(403, 'Копию базы может скачать только директор');
+      const tmp = path.join(dataDir, `backup-${Date.now()}.sqlite`);
+      try {
+        db.exec(`VACUUM INTO '${tmp.replace(/'/g, "''")}'`);
+        const buf = fs.readFileSync(tmp);
+        db.prepare('INSERT INTO audit_log (user_id, user_name, action, target) VALUES (?,?,?,?)').run(who.id, who.full_name, 'скачал(а) резервную копию', 'База данных');
+        res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': buf.length, 'Cache-Control': 'no-store',
+          'Content-Disposition': `attachment; filename="school-backup-${new Date().toISOString().slice(0, 10)}.sqlite"` });
+        return res.end(buf);
+      } finally { fs.rmSync(tmp, { force: true }); }
     }
     let match = null;
     for (const r of routes) {
@@ -117,6 +152,7 @@ function createApp({ dbFile, dataDir, publicDir, cookieSecure = false, scheduler
       throw e;
     }
     if (isLogin) limiter.reset(ip);
+    if (mutating && user && !isLogin) logAudit(user, method, url.pathname);
     send(res, 200, result ?? { ok: true }, { 'Cache-Control': 'no-store', ...(out.cookies.length ? { 'Set-Cookie': out.cookies } : {}) });
   }
 
