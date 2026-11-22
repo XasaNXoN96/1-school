@@ -178,3 +178,12 @@ h2.sec { margin: 22px 0 12px; color: var(--color-primary-dark); }
 .live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #2e9e62; margin-right: 6px; animation: blinkdot 1.6s infinite; }
 @keyframes blinkdot { 50% { opacity: .25; } }
 [data-theme=dark] .ck-item.st-pending { background: #2a2414; } [data-theme=dark] .ck-item.st-rejected { background: #2b1a19; }
+
+/* Панель и вход рассчитаны на светлый вид: в тёмной теме браузера (auto) светлый текст попадал на белые карточки и «пропадал».
+   Поэтому для панели палитра всегда светлая, независимо от темы системы. */
+html[data-theme="dark"]:root {
+  color-scheme: light;
+  --color-bg: #f2f6fd; --color-surface: #ffffff; --color-text: #14233f; --color-muted: #5b6b86;
+  --color-primary: #0f3f9e; --color-primary-dark: #0a2c75; --color-border: #dde6f3; --color-footer: #0a2c75;
+  --shadow: 0 8px 30px rgba(15, 63, 158, .08); --header-bg: rgba(255,255,255,.96);
+}
