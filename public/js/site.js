@@ -1,6 +1,7 @@
 import { h, api, imgUrl, paragraphs } from './common.js';
 import { t, lang, setLang, LANGS, fmtDate, monthName as mName } from './i18n.js';
 import { icon } from './icons.js';
+import { extraViews as parentViews, parentLinks, parentNavMatch, parentNavLabel, homeParentBlock } from './site-extra.js';
 
 const app = document.getElementById('app');
 let site = { school_name: '№1-Maktab', city: '', pages: [], stats: {} };
@@ -21,6 +22,7 @@ function buildMenu() {
     { href: '#/news', label: t('nav.news'), ico: 'news', match: (h0) => h0.startsWith('#/news') },
     { label: t('nav.media'), ico: 'image', match: (h0) => /^#\/(media|announcements|events)/.test(h0),
       children: [['#/media', t('nav.gallery')], ['#/announcements', t('nav.announcements')], ['#/events', t('nav.events')]] },
+    { label: parentNavLabel(), ico: 'users', match: parentNavMatch, children: parentLinks() },
     { href: '#/achievements', label: t('nav.achievements'), ico: 'trophy', match: (h0) => h0.startsWith('#/achievements') },
     { href: '#/admission', label: t('nav.admission'), ico: 'cap', match: (h0) => h0.startsWith('#/admission') },
     { href: '#/contact', label: t('nav.contact'), ico: 'phone', match: (h0) => /^#\/(contact|page\/contacts)/.test(h0) },
@@ -179,7 +181,8 @@ const views = {
       h('div', { class: 'tour-pics' }, tour.slice(0, 4).map((x) => h('img', { src: imgUrl(x.file), alt: '', loading: 'lazy' }))),
       h('div', { class: 'tour-text' }, h('h2', {}, icon('route', 28), t('home.tour')), h('p', {}, t('home.tour.sub')), h('span', { class: 'btn amber' }, icon('play', 18), t('home.tour.btn'))))) : null;
 
-    return [hero, statBar, h('div', { class: 'container duo events-adm' }, evBox, admBox), tourStrip && h('div', { class: 'gap' }),
+    const parentBlock = await homeParentBlock().catch(() => null);
+    return [hero, statBar, parentBlock, h('div', { class: 'container duo events-adm' }, evBox, admBox), tourStrip && h('div', { class: 'gap' }),
       h('div', { class: 'container triple' }, newsCol, teacherCol, studentCol), tourStrip, banners,
       h('div', { class: 'container duo' }, aboutBox, annBox),
       media.length ? h('div', { class: 'container life' }, panelBox(t('home.life'), 'image', null, carousel(media))) : null,
@@ -349,7 +352,7 @@ const extraViews = {
           site.telegram_url ? h('a', { class: 'btn outline', href: site.telegram_url, target: '_blank', rel: 'noopener noreferrer' }, icon('send', 18), 'Telegram') : null)))));
   },
 };
-Object.assign(views, extraViews);
+Object.assign(views, extraViews, parentViews);
 
 function carousel(media) {
   const track = h('div', { class: 'car-track' }, media.map((m) => h('figure', { onclick: () => lightbox(m) }, h('img', { src: imgUrl(m.file), alt: m.title || '', loading: 'lazy' }))));
@@ -434,7 +437,7 @@ async function route() {
   try {
     if (!a) view = await views.home();
     else if (a === 'news' && b) view = await views.newsItem(b);
-    else if (['news', 'announcements', 'media', 'achievements', 'teachers', 'events', 'admission', 'tour', 'faq', 'contact'].includes(a)) view = await views[a]();
+    else if (['news', 'announcements', 'media', 'achievements', 'teachers', 'events', 'admission', 'tour', 'faq', 'contact', 'parents', 'cabinet', 'appointment', 'feedback', 'menu', 'bells', 'documents'].includes(a)) view = await views[a]();
     else if (a === 'page' && b) view = await views.page(b);
     else view = h('div', { class: 'container' }, empty('empty.page'));
   } catch (e) { view = h('div', { class: 'container' }, h('div', { class: 'empty' }, e.status === 404 ? t('empty.page') : t('err.load'))); }

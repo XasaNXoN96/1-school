@@ -285,6 +285,43 @@ const annIds = db.prepare('SELECT id FROM announcements').all().map((r) => r.id)
 const rd = db.prepare('INSERT OR IGNORE INTO announcement_reads (announcement_id, user_id) VALUES (?,?)');
 annIds.forEach((id, i) => [T.t1, T.t2, T.t3, T.t4].slice(0, 4 - (i % 3)).forEach((uid) => rd.run(id, uid)));
 
+// ---- Родители, журнал, меню, звонки, документы, замены (демо новых разделов) ----
+{
+  const { newParentCode } = require('../server/parent-auth');
+  const codes = { [s1]: 'DEMO2345', [s2]: 'DEMO6789' };
+  for (const r of db.prepare('SELECT id FROM students').all()) db.prepare('UPDATE students SET parent_code=? WHERE id=?').run(codes[r.id] || newParentCode(), r.id);
+  db.prepare('UPDATE students SET parent_name=?, parent_phone=? WHERE id=?').run('Aliyev Botir', '+998 90 123 45 67', s1);
+  const g = db.prepare('INSERT INTO grades (student_id, teacher_id, subject, date, score, kind, comment) VALUES (?,?,?,?,?,?,?)');
+  const subj = [['Matematika', T.t1], ['Informatika', T.t2], ['Ingliz tili', T.t3]];
+  const pat = { [s1]: [5, 5, 4, 5, 5, 4], [s2]: [4, 5, 4, 3, 5, 4] };
+  for (const [sid, sc] of Object.entries(pat)) subj.forEach(([sb, tid], si) => sc.forEach((v, i) => g.run(Number(sid), tid, sb, d(-3 - i * 4 - si), Math.min(5, Math.max(2, v - (si === 2 && i === 3 ? 1 : 0))), i === 2 ? 'test' : 'lesson', i === 2 ? 'Nazorat ishi' : '')));
+  const at = db.prepare('INSERT OR IGNORE INTO student_attendance (student_id, date, status, note, marked_by) VALUES (?,?,?,?,?)');
+  for (let i = 1; i <= 24; i++) { const day = new Date(Date.now() - i * 86400000).getUTCDay(); if (day === 0) continue; for (const sid of [s1, s2]) at.run(sid, d(-i), i % 11 === 0 ? 'absent' : i % 7 === 0 ? 'late' : i === 9 && sid === s2 ? 'excused' : 'present', '', T.t1); }
+  const hw = db.prepare('INSERT INTO homework (class_name, subject, text, due_date, teacher_id) VALUES (?,?,?,?,?)');
+  hw.run('9-A', 'Matematika', '§24, №312–318 (kvadrat tenglamalar)', d(1), T.t1); hw.run('9-A', 'Ingliz tili', 'Unit 6: yozma matn (120 so\'z)', d(2), T.t3); hw.run('8-B', 'Matematika', '§19, №201–205', d(1), T.t1);
+  const pm = db.prepare('INSERT INTO parent_messages (student_id, kind, text, created_at) VALUES (?,?,?,datetime(\'now\', ?))');
+  pm.run(s1, 'grade', 'Jasur Aliyev: Matematika — 5 (nazorat ishi)', '-1 days'); pm.run(s1, 'info', "Ota-onalar yig'ilishi shu juma kuni soat 17:00 da.", '-2 days'); pm.run(s2, 'absent', 'Madina Karimova bugun darsda yo\'q edi.', '-3 days');
+  const mon = new Date(Date.now()); mon.setUTCDate(mon.getUTCDate() - ((mon.getUTCDay() || 7) - 1));
+  const MENU = [['Sutli guruch bo\'tqasi, non, choy', 'Mastava, kotlet va kartoshka pyuresi, kompot', 'Pirog va sut'], ['Omlet, non-sariyog\', choy', 'Sho\'rva, palov, salat', 'Meva va yogurt'], ['Tvorogli blinchik, kakao', 'Lagmon, non, kompot', 'Kefir va pechenye'], ['Makaron va tuxum, choy', 'Borsh, tovuq go\'shti va grechka, sharbat', 'Olma va non'], ['Sutli sho\'rva, tuxum, choy', 'Manti, salat, kompot', 'Pirojniy va sut'], ['Bo\'tqa va meva, choy', 'Yengil sho\'rva va bug\'doy noni', 'Yogurt']];
+  const mn = db.prepare('INSERT OR REPLACE INTO menu_days (date, breakfast, lunch, snack) VALUES (?,?,?,?)');
+  for (let w = 0; w < 2; w++) MENU.forEach((m, i) => { const x = new Date(mon); x.setUTCDate(x.getUTCDate() + w * 7 + i); mn.run(x.toISOString().slice(0, 10), ...m); });
+  const bl = db.prepare('INSERT INTO bells (shift, number, start_time, end_time) VALUES (?,?,?,?)');
+  [['08:00', '08:45'], ['08:55', '09:40'], ['09:50', '10:35'], ['10:55', '11:40'], ['11:50', '12:35'], ['12:45', '13:30']].forEach((b, i) => bl.run(1, i + 1, b[0], b[1]));
+  [['14:00', '14:45'], ['14:55', '15:40'], ['15:50', '16:35'], ['16:45', '17:30']].forEach((b, i) => bl.run(2, i + 1, b[0], b[1]));
+  const tr = db.prepare('INSERT INTO transport_routes (title, description, times, sort) VALUES (?,?,?,?)');
+  tr.run('Marshrut №1', 'Markaziy bozor — Navoiy ko\'chasi — maktab', '07:15, 13:40', 1); tr.run('Marshrut №2', 'Yangi mahalla — Gagarin ko\'chasi — maktab', '07:20, 13:45', 2);
+  const pdf = (t) => Buffer.from(`%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 120]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj\n4 0 obj<</Length 50>>stream\nBT /F1 14 Tf 20 60 Td (${t}) Tj ET\nendstream\nendobj\n5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n`);
+  const doc = db.prepare('INSERT INTO documents (title, category, description, file, original_name) VALUES (?,?,?,?,?)');
+  [['Maktab ustavi', 'Asosiy hujjatlar', 'Nizom', 'ustav'], ['Ta\'lim faoliyati litsenziyasi', 'Asosiy hujjatlar', '', 'litsenziya'], ['Ichki tartib qoidalari', "Ota-onalar uchun", "O'quvchilar va ota-onalar uchun qoidalar", 'qoidalar']].forEach(([t0, c, ds, f]) => { const name = `demo-${f}.pdf`; fs.writeFileSync(path.join(upDir, name), pdf(f)); doc.run(t0, c, ds, name, `${f}.pdf`); });
+  db.prepare("INSERT INTO leave_requests (user_id, kind, date_from, date_to, reason) VALUES (?,?,?,?,?)").run(T.t2, 'vacation', d(7), d(11), 'Oilaviy sabablarga ko\'ra');
+  db.prepare("INSERT INTO leave_requests (user_id, kind, date_from, date_to, reason, status, decided_by, decided_at) VALUES (?,?,?,?,?,'approved',1,datetime('now'))").run(T.t3, 'sick', d(-6), d(-4), 'Shamollash');
+  db.prepare('INSERT INTO appointments (with_user_id, date, time, name, phone, topic) VALUES (?,?,?,?,?,?)').run(1, d(2), '14:20', 'Karimov Anvar', '+998 91 555 22 11', 'Farzandimni 5-sinfga ko\'chirish');
+  db.prepare('INSERT INTO feedback (code, topic, message, contact, status, answer, answered_at) VALUES (?,?,?,?,?,?,datetime(\'now\'))').run('FDEMO2345', 'suggestion', 'Maktab oldida yo\'l belgisi va svetofor kerak.', '', 'answered', 'Taklif uchun rahmat, tuman hokimligiga murojaat yuborildi.');
+  db.prepare('INSERT INTO feedback (code, topic, message, contact) VALUES (?,?,?,?)').run('FDEMO6789', 'question', 'Yozgi lager qachon boshlanadi?', '+998 90 000 11 22');
+  db.prepare('INSERT INTO cert_requests (student_id, kind, purpose) VALUES (?,?,?)').run(s1, 'study', 'Poliklinika uchun');
+  db.prepare('INSERT INTO payroll_items (user_id, month, kind, title, amount, created_by) VALUES (?,?,?,?,?,1)').run(T.t1, d(0).slice(0, 7), 'bonus', 'Olimpiada uchun mukofot', 300000);
+}
+
 // ---- Проверка по лицу и геозоне (демо: «отпечатки» случайные — настоящие лица добавляются в панели) ----
 const { execFileSync } = require('node:child_process');
 setSetting(db, 'face_required', '1');

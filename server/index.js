@@ -31,6 +31,7 @@ if (token) {
   const api = telegramApi(token);
   bot = createBot({ db, notifier, api, publicUrl: process.env.PUBLIC_URL });
   notifier.setTransport((chatId, text) => api.sendMessage(chatId, text));
+  notifier.setDocTransport((chatId, file, caption) => api.sendDocument(chatId, file, caption));
   bot.startPolling();
   console.log('Telegram-бот запущен');
 } else {

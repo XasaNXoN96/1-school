@@ -2,15 +2,17 @@ import { T, h, api, icon, state, isManager, readForm, field, guard } from './ui.
 import { views } from './views.js';
 import './views2.js';
 import './views3.js';
+import './views4.js';
+import './views5.js';
 import { lang, setLang, LANGS } from '../js/i18n.js';
 
 const app = document.getElementById('app');
 const logo = (size = 44) => h('img', { src: '../img/logo.svg', alt: '', width: size, height: size });
 
 const MENU_MANAGER = [['dashboard', 'Главная', 'home'], ['stats', 'Статистика', 'trend'], ['users', 'Пользователи', 'users'], ['calendar', 'Календарь', 'calendar'], ['applications', 'Заявки с сайта', 'mail'], ['lessons', 'Расписание уроков', 'clock'], ['tasks', 'Поручения', 'clipboard'], ['students', 'Ученики', 'cap'],
-  ['news', 'Новости', 'news'], ['announcements', 'Объявления', 'megaphone'], ['media', 'Медиа (фото/видео)', 'image'], ['pages', 'О школе', 'book'], ['achievements', 'Достижения', 'trophy'], ['reports', 'Отчёты', 'chart'], ['faq', 'Вопросы и ответы', 'help'], ['faceid', 'Проверка по лицу', 'camera'], ['audit', 'Журнал действий', 'shield'], ['settings', 'Настройки', 'settings']];
+  ['news', 'Новости', 'news'], ['announcements', 'Объявления', 'megaphone'], ['media', 'Медиа (фото/видео)', 'image'], ['pages', 'О школе', 'book'], ['achievements', 'Достижения', 'trophy'], ['reports', 'Отчёты', 'chart'], ['faq', 'Вопросы и ответы', 'help'], ['faceid', 'Проверка по лицу', 'camera'], ['journal', 'Журнал и оценки', 'book'], ['parents', 'Родители и рассылки', 'message'], ['requests', 'Приём, справки, обращения', 'doc'], ['hr', 'Кадры и зарплата', 'briefcase'], ['subs', 'Замены уроков', 'repeat'], ['info', 'Меню, звонки, документы', 'utensils'], ['security', 'Безопасность', 'key'], ['audit', 'Журнал действий', 'shield'], ['settings', 'Настройки', 'settings']];
 const MENU_STAFF = [['dashboard', 'Главная', 'home'], ['lessons', 'Мои уроки', 'book'], ['calendar', 'Календарь', 'calendar'], ['tasks', 'Задания', 'clipboard'], ['students', 'Ученики', 'cap'], ['achievements', 'Достижения', 'trophy'],
-  ['attendance', 'Посещаемость', 'check'], ['mycheck', 'Моя отметка', 'camera'], ['salary', 'Зарплата', 'chart'], ['messages', 'Сообщения', 'mail'], ['announcements', 'Объявления', 'megaphone'], ['plans', 'Мои планы', 'clock'], ['profile', 'Профиль', 'user']];
+  ['attendance', 'Посещаемость', 'check'], ['mycheck', 'Моя отметка', 'camera'], ['journal', 'Журнал и оценки', 'book'], ['requests', 'Приём и обращения', 'doc'], ['subs', 'Замены уроков', 'repeat'], ['leave', 'Отпуск и больничный', 'briefcase'], ['payslip', 'Расчётный листок', 'wallet'], ['salary', 'Зарплата', 'chart'], ['messages', 'Сообщения', 'mail'], ['announcements', 'Объявления', 'megaphone'], ['plans', 'Мои планы', 'clock'], ['profile', 'Профиль', 'user']];
 
 const roleLabel = (r) => ({ director: T('Администратор'), assistant: T('Ассистент'), teacher: T('Учитель'), staff: T('Сотрудник') }[r]);
 const GREET = { uz: 'Assalomu alaykum', ru: 'Здравствуйте', en: 'Hello' };
@@ -29,7 +31,7 @@ async function authScreen(setup) {
   const site = await api('GET', '/api/public/site').catch(() => ({ school_name: '№1-Maktab', city: 'Gagarin shahri' }));
   const box = h('div'), pw = h('input', { name: 'password', type: 'password', required: true, autocomplete: setup ? 'new-password' : 'current-password', placeholder: T('Пароль') });
   const eye = h('button', { type: 'button', class: 'eye', 'aria-label': T('Показать пароль'), onclick: () => { const show = pw.type === 'password'; pw.type = show ? 'text' : 'password'; eye.replaceChildren(icon(show ? 'eyeoff' : 'eye', 20)); } }, icon('eye', 20));
-  const form = h('form', { onsubmit: (e) => { e.preventDefault(); const d = readForm(form); guard(box, async () => { await api('POST', setup ? '/api/setup' : '/api/auth/login', { ...d, remember: d.remember !== false }); await start(); }); } },
+  const form = h('form', { onsubmit: (e) => { e.preventDefault(); const d = readForm(form); guard(box, async () => { const r = await api('POST', setup ? '/api/setup' : '/api/auth/login', { ...d, remember: d.remember !== false }); if (r && r.need_code) return codeStep(r.token, box); await start(); }); } },
     setup ? h('label', { class: 'input' }, icon('user', 20), h('input', { name: 'full_name', required: true, placeholder: T('Ваше ФИО') })) : null,
     h('label', { class: 'input' }, icon('user', 20), h('input', { name: 'username', required: true, autocomplete: 'username', placeholder: T('Логин'), autocapitalize: 'none' })),
     h('label', { class: 'input' }, icon('lock', 20), pw, eye),
@@ -41,6 +43,14 @@ async function authScreen(setup) {
     h('div', { class: 'login-card' }, h('div', { class: 'login-brand' }, logo(84), h('small', {}, site.city), h('h1', {}, site.school_name), h('p', {}, T('Информационная система школы'))),
       setup ? h('p', { class: 'muted center' }, T('Первый запуск: создайте администратора. Директор автоматически становится администратором сайта.')) : null, box, form,
       h('a', { class: 'back', href: '../index.html' }, '← ' + T('На сайт')))));
+}
+
+// Второй шаг входа: код из Telegram
+function codeStep(token, box) {
+  const inp = h('input', { name: 'code', inputmode: 'numeric', maxlength: 6, autocomplete: 'one-time-code', placeholder: '123456', required: true, style: 'font-size:24px;letter-spacing:6px;text-align:center' });
+  const f = h('form', { onsubmit: (e) => { e.preventDefault(); guard(box, async () => { await api('POST', '/api/auth/verify', { token, code: inp.value }); await start(); }); } },
+    h('div', { class: 'ok-msg' }, T('Код отправлен в ваш Telegram. Он действует 5 минут.')), h('label', { class: 'input' }, icon('key', 20), inp), h('button', { class: 'primary big', type: 'submit' }, T('Подтвердить')));
+  document.querySelector('.login-card form')?.replaceWith(f); inp.focus();
 }
 
 // ---------- каркас ----------
@@ -57,7 +67,7 @@ try { if (localStorage.getItem(SIDE_KEY) === '1') document.body.classList.add('s
 
 async function route() {
   const me = state.me;
-  const items = isManager() ? MENU_MANAGER : MENU_STAFF;
+  const items = (isManager() ? MENU_MANAGER : MENU_STAFF).filter(([k]) => (k !== 'security' || me.role === 'director') && (!['journal', 'requests'].includes(k) || isManager() || me.role === 'teacher'));
   const key = location.hash.replace('#/', '') || 'dashboard';
   const cur = items.find((m) => m[0] === key) || items[0];
   const d = await api('GET', '/api/panel/dashboard').catch(() => ({ unread: 0 }));

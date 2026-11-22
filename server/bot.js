@@ -19,6 +19,17 @@ function telegramApi(token) {
   };
   return {
     sendMessage: (chat_id, text, extra = {}) => call('sendMessage', { chat_id, text, ...extra }),
+    // Отправка файла (резервная копия): multipart без внешних библиотек
+    sendDocument: async (chat_id, filePath, caption = '') => {
+      const form = new FormData();
+      form.append('chat_id', String(chat_id));
+      if (caption) form.append('caption', caption);
+      form.append('document', new Blob([require('node:fs').readFileSync(filePath)]), require('node:path').basename(filePath));
+      const res = await fetch(`${base}/sendDocument`, { method: 'POST', body: form });
+      const data = await res.json().catch(() => ({}));
+      if (!data.ok) throw new Error(data.description || `Telegram API ${res.status}`);
+      return data.result;
+    },
     getUpdates: (offset, signal) => call('getUpdates', { offset, timeout: 30, allowed_updates: ['message'] }, signal),
   };
 }
@@ -35,6 +46,7 @@ const KB = {
       resize_keyboard: true,
     },
   }),
+  parent: { reply_markup: { keyboard: [[{ text: '📚 Оценки и посещаемость' }, { text: '📝 Домашнее задание' }]], resize_keyboard: true } },
   askLocation: {
     reply_markup: {
       keyboard: [[{ text: '📍 Отправить геолокацию', request_location: true }], [{ text: '❌ Отмена' }]],
@@ -66,7 +78,15 @@ function createBot({ db, notifier, api, now = () => new Date(), publicUrl = '' }
   function link(chatId, codeRaw) {
     const code = String(codeRaw || '').trim().toUpperCase();
     const u = code && db.prepare('SELECT * FROM users WHERE link_code = ? AND active = 1').get(code);
-    if (!u) return reply(chatId, 'Код не найден или уже использован. Попросите у директора новый код.');
+    if (!u) {
+      // Не сотрудник — возможно, родитель с кодом из кабинета/школы
+      const st = code && db.prepare("SELECT * FROM students WHERE parent_code = ? AND active = 1").get(code);
+      if (st) {
+        db.prepare('UPDATE students SET parent_telegram_id = ? WHERE id = ?').run(String(chatId), st.id);
+        return reply(chatId, `Здравствуйте! Подключено: ${st.full_name}${st.class_name ? ` (${st.class_name})` : ''}.\nСюда будут приходить оценки, сообщения об отсутствии, домашние задания и объявления школы.`, KB.parent);
+      }
+      return reply(chatId, 'Код не найден или уже использован. Сотрудникам код выдаёт директор, родителям — школа.');
+    }
     const taken = db.prepare('SELECT id FROM users WHERE telegram_id = ? AND id != ?').get(String(chatId), u.id);
     if (taken) return reply(chatId, 'Этот Telegram уже привязан к другому сотруднику.');
     db.prepare('UPDATE users SET telegram_id = ?, link_code = NULL WHERE id = ?').run(String(chatId), u.id);
@@ -119,6 +139,32 @@ function createBot({ db, notifier, api, now = () => new Date(), publicUrl = '' }
     return `📅 Сегодня, ${t.date}:\n` + lines.join('\n');
   }
 
+  const kidsOf = (chatId) => db.prepare("SELECT * FROM students WHERE parent_telegram_id = ? AND active = 1 ORDER BY full_name").all(String(chatId));
+
+  function parentGradesText(kids) {
+    const t = localNow(now(), getSettings(db).timezone).date;
+    const day = (n) => new Date(Date.parse(`${t}T00:00:00Z`) + n * 86400_000).toISOString().slice(0, 10);
+    return kids.map((k) => {
+      const g = db.prepare('SELECT subject, date, score FROM grades WHERE student_id = ? AND date >= ? ORDER BY date DESC, id DESC').all(k.id, day(-60));
+      const avg = g.length ? (g.reduce((s0, x) => s0 + x.score, 0) / g.length).toFixed(2) : '—';
+      const att = db.prepare('SELECT status, COUNT(*) c FROM student_attendance WHERE student_id = ? AND date >= ? GROUP BY status').all(k.id, day(-30));
+      const n = (st) => att.find((a) => a.status === st)?.c || 0;
+      return [`👤 ${k.full_name}${k.class_name ? ` (${k.class_name})` : ''}`, `Средний балл за 60 дней: ${avg}`,
+        g.length ? 'Последние оценки:\n' + g.slice(0, 6).map((x) => `• ${x.date} ${x.subject}: ${x.score}`).join('\n') : 'Оценок пока нет.',
+        `За 30 дней: пропусков ${n('absent')}, опозданий ${n('late')}`].join('\n');
+    }).join('\n\n');
+  }
+  function parentHomeworkText(kids) {
+    const t = localNow(now(), getSettings(db).timezone).date;
+    const seen = new Set();
+    const lines = [];
+    for (const k of kids) {
+      if (seen.has(k.class_name)) continue; seen.add(k.class_name);
+      for (const h of db.prepare("SELECT subject, text, due_date FROM homework WHERE lower(trim(class_name)) = lower(trim(?)) AND due_date >= ? ORDER BY due_date LIMIT 8").all(k.class_name, t)) lines.push(`• до ${h.due_date}, ${k.class_name}, ${h.subject}: ${h.text}`);
+    }
+    return lines.length ? '📝 Домашние задания:\n' + lines.join('\n') : '📝 Заданий на ближайшие дни нет.';
+  }
+
   async function handleUpdate(update) {
     const msg = update.message;
     if (!msg || !msg.chat || msg.chat.type !== 'private') return;
@@ -129,13 +175,20 @@ function createBot({ db, notifier, api, now = () => new Date(), publicUrl = '' }
     if (cmd) {
       if (cmd[2]) return link(chatId, cmd[2]);
       const u = userByTg(chatId);
+      if (!u && kidsOf(chatId).length) return reply(chatId, 'Здравствуйте! Выберите действие.', KB.parent);
       return u
         ? reply(chatId, `Здравствуйте, ${u.full_name}!`, KB.main(isManager(u)))
-        : reply(chatId, 'Здравствуйте! Чтобы привязать аккаунт, отправьте: /start КОД\nКод выдаёт директор в панели сайта.');
+        : reply(chatId, 'Здравствуйте! Чтобы привязать аккаунт, отправьте: /start КОД\nСотрудникам код выдаёт директор в панели сайта, родителям — школа.');
     }
 
     const u = userByTg(chatId);
-    if (!u) return reply(chatId, 'Сначала привяжите аккаунт: /start КОД (код выдаёт директор).');
+    if (!u) {
+      // 8 знаков — код ещё одного ребёнка (родитель может подключить нескольких)
+      if (/^[A-Za-z0-9]{8}$/.test(text) && db.prepare('SELECT 1 x FROM students WHERE parent_code = ? AND active = 1').get(text.toUpperCase())) return link(chatId, text);
+      const kids = kidsOf(chatId);
+      if (kids.length) return reply(chatId, text === '📝 Домашнее задание' ? parentHomeworkText(kids) : parentGradesText(kids), KB.parent);
+      return reply(chatId, 'Сначала привяжите аккаунт: /start КОД. Сотрудникам код выдаёт директор, родителям — школа.');
+    }
 
     if (msg.location) {
       const p = pending.get(String(chatId));

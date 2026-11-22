@@ -2,10 +2,13 @@
 
 // Уведомления: пишем в таблицу notices (видно в панели) и, если есть Telegram, отправляем в бота.
 function createNotifier(db) {
-  let transport = null; // (telegramId, text) => Promise
+  let transport = null;    // (telegramId, text) => Promise
+  let docTransport = null; // (telegramId, filePath, caption) => Promise
 
   const notifier = {
     setTransport(fn) { transport = fn; },
+    setDocTransport(fn) { docTransport = fn; },
+    hasTransport() { return !!transport; },
 
     managerIds() {
       return db.prepare("SELECT id FROM users WHERE active = 1 AND frozen = 0 AND role IN ('director','assistant')")
@@ -26,6 +29,17 @@ function createNotifier(db) {
     },
 
     notifyManagers(text) { this.notify(this.managerIds(), text); },
+
+    // Прямая отправка в Telegram-чат (родителям, код входа). Возвращает промис; без бота — отказ.
+    async sendTelegram(chatId, text) {
+      if (!transport) throw new Error('Telegram-бот не подключён');
+      return transport(chatId, text);
+    },
+
+    async sendDocument(chatId, filePath, caption) {
+      if (!docTransport) throw new Error('Telegram-бот не подключён');
+      return docTransport(chatId, filePath, caption);
+    },
   };
   return notifier;
 }

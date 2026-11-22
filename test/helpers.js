@@ -25,7 +25,7 @@ async function startTestApp(opts = {}) {
     };
   }
   const close = () => { app.server.close(); fs.rmSync(dataDir, { recursive: true, force: true }); };
-  return { ...app, base, client, close };
+  return { ...app, base, client, close, dataDir };
 }
 
 module.exports = { startTestApp };

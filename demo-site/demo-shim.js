@@ -48,6 +48,9 @@
       const r0 = d.users[cur()]; const all = r0 && r0.map['/api/checkins']; const st = new URLSearchParams(u.split('?')[1] || '').get('status');
       if (all) return J({ ...all, attempts: st ? all.attempts.filter((a) => a.status === st) : all.attempts });
     }
+    if (path === '/api/parent/login') { let b = {}; try { b = JSON.parse(opts.body); } catch {} if (String(b.code || '').trim().toUpperCase() !== 'DEMO2345') return J({ error: 'Код не найден. Для демо используйте DEMO2345' }, 401); try { sessionStorage.setItem('demo_parent', '1'); } catch {} return J({ ok: true, student_id: 1 }); }
+    if (path === '/api/parent/logout') { try { sessionStorage.removeItem('demo_parent'); } catch {} return J({ ok: true }); }
+    if (method === 'GET' && path.startsWith('/api/parent/')) { let on = false; try { on = !!sessionStorage.getItem('demo_parent'); } catch {} if (!on) return J({ error: 'Войдите по коду родителя' }, 401); }
     if (method !== 'GET') return J({ ok: true, demo: true });
     if (path === '/api/auth/me') { const r = d.users[cur()]; return r ? J(r.user) : J({ error: 'Требуется вход' }, 401); }
     if (d.public[path] !== undefined) {
@@ -67,7 +70,7 @@
   };
   addEventListener('DOMContentLoaded', () => {
     const b = document.createElement('div');
-    b.textContent = 'ДЕМО · тестовые данные, изменения не сохраняются · вход: director или teacher1 / Demo-2026-School';
+    b.textContent = 'ДЕМО · тестовые данные, изменения не сохраняются · вход: director или teacher1 / Demo-2026-School · код родителя: DEMO2345';
     b.style.cssText = 'position:fixed;left:50%;bottom:8px;transform:translateX(-50%);z-index:99999;background:#0a2c75;color:#fff;font:12px/1.3 system-ui,sans-serif;padding:6px 12px;border-radius:999px;opacity:.92;max-width:94vw;text-align:center;pointer-events:none';
     document.body.appendChild(b);
   });

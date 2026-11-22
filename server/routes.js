@@ -5,6 +5,7 @@ const path = require('node:path');
 const { HttpError } = require('./http');
 const { getSettings, setSetting } = require('./db');
 const A = require('./auth');
+const Sec = require('./security');
 const { manualMark, localNow, toMinutes } = require('./attendance');
 const { monthReport, currentMonth } = require('./salary');
 
@@ -94,7 +95,7 @@ function buildRoutes({ db, notifier, uploadsDir }) {
   get('/api/public/site', 'public', () => {
     const s = getSettings(db);
     const pick = ['work_hours', 'school_name', 'city', 'motto', 'address', 'phone', 'email', 'hero_image', 'about_image', 'video_url',
-      'clubs_count', 'telegram_url', 'youtube_url', 'instagram_url', 'facebook_url', 'school_lat', 'school_lon'];
+      'clubs_count', 'telegram_url', 'youtube_url', 'instagram_url', 'facebook_url', 'school_lat', 'school_lon', 'bot_username'];
     return {
       ...Object.fromEntries(pick.map((k) => [k, s[k]])),
       pages: all('SELECT slug, title FROM pages ORDER BY sort, slug'),
@@ -160,12 +161,22 @@ function buildRoutes({ db, notifier, uploadsDir }) {
     return { ok: true };
   });
 
-  post('/api/auth/login', 'public', ({ body, setSession }) => {
-    const u = one('SELECT * FROM users WHERE username = ? AND active = 1', str(body.username, 40));
+  post('/api/auth/login', 'public', async ({ req, body, setSession }) => {
+    const username = str(body.username, 40);
+    const u = one('SELECT * FROM users WHERE username = ? AND active = 1', username);
+    const meta = { username, ip: req.socket.remoteAddress, ua: req.headers['user-agent'] };
     if (!u || !A.verifyPassword(String(body.password || ''), u.password_hash)) {
+      Sec.logLogin(db, { ...meta, user_id: u?.id, ok: false, reason: 'неверный логин или пароль' });
       throw new HttpError(401, 'Неверный логин или пароль');
     }
-    if (u.frozen) throw new HttpError(403, 'Аккаунт заморожен. Обратитесь к администратору.');
+    if (u.frozen) { Sec.logLogin(db, { ...meta, user_id: u.id, ok: false, reason: 'аккаунт заморожен' }); throw new HttpError(403, 'Аккаунт заморожен. Обратитесь к администратору.'); }
+    // Директор с включённой защитой: после пароля нужен одноразовый код из Telegram
+    if (Sec.twoFactorRequired(db, u)) {
+      const token = await Sec.issueCode(db, notifier, u);
+      Sec.logLogin(db, { ...meta, user_id: u.id, ok: false, reason: 'пароль верен, ждём код из Telegram' });
+      return { need_code: true, token };
+    }
+    Sec.logLogin(db, { ...meta, user_id: u.id, ok: true });
     setSession(u.id, body.remember !== false);
     return selfUser(u);
   });
@@ -222,6 +233,12 @@ function buildRoutes({ db, notifier, uploadsDir }) {
         };
       });
       out.face_pending = one("SELECT COUNT(*) c FROM checkin_attempts WHERE status='pending'").c;
+      out.attention = {
+        leaves: one("SELECT COUNT(*) c FROM leave_requests WHERE status='pending'").c,
+        appointments: one("SELECT COUNT(*) c FROM appointments WHERE status='new'").c,
+        certs: one("SELECT COUNT(*) c FROM cert_requests WHERE status='new'").c,
+        feedback: one("SELECT COUNT(*) c FROM feedback WHERE status='new'").c,
+      };
       out.new_applications = one("SELECT COUNT(*) c FROM applications WHERE status='new'").c;
       out.pending_achievements = one("SELECT COUNT(*) c FROM achievements WHERE status='pending'").c;
       out.tasks_overdue = one("SELECT COUNT(*) c FROM tasks WHERE status='open' AND due_date IS NOT NULL AND due_date < ?", t.date).c;
@@ -347,7 +364,12 @@ function buildRoutes({ db, notifier, uploadsDir }) {
     full_name: str(b.full_name, 100, true, 'ФИО'), class_name: str(b.class_name, 20),
     photo: file(b.photo), best_note: str(b.best_note, 300),
   });
-  get('/api/students', 'auth', () => all('SELECT * FROM students WHERE active=1 ORDER BY class_name, full_name'));
+  get('/api/students', 'auth', ({ user }) => {
+    const rows = all('SELECT * FROM students WHERE active=1 ORDER BY class_name, full_name');
+    // Коды родителей и Telegram родителей видит только администрация
+    if (A.isManager(user)) return rows;
+    return rows.map(({ parent_code, parent_telegram_id, parent_phone, parent_name, ...rest }) => rest); // eslint-disable-line no-unused-vars
+  });
   post('/api/students', 'manager', ({ body }) => {
     const f = studentFields(body);
     const r = run('INSERT INTO students (full_name, class_name, photo) VALUES (?,?,?)', f.full_name, f.class_name, f.photo);

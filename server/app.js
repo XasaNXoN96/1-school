@@ -12,6 +12,12 @@ const { handleRawUpload } = require('./rawupload');
 const { renderLite } = require('./lite');
 const { faceRoutes } = require('./routes-face');
 const { createFaceEngine } = require('./face');
+const { journalRoutes } = require('./routes-journal');
+const { requestRoutes } = require('./routes-requests');
+const { hrRoutes } = require('./routes-hr');
+const { infoRoutes } = require('./routes-info');
+const { securityRoutes } = require('./routes-security');
+const Backup = require('./backup');
 
 const COOKIE = 'sid';
 
@@ -36,6 +42,10 @@ function createApp({ dbFile, dataDir, publicDir, cookieSecure = false, scheduler
   const engine = faceEngine || createFaceEngine({ dir: path.join(publicDir, 'vendor', 'face') });
   const routes = buildRoutes({ db, notifier, uploadsDir });
   routes.push(...faceRoutes({ db, notifier, engine, botToken, publicUrl }));
+  const journal = journalRoutes({ db, notifier });
+  const parentHelpers = { notifyParents: journal.notifyParents, notifyClass: journal.notifyClass };
+  routes.push(...journal.routes, ...requestRoutes({ db, notifier, parentHelpers }).routes, ...hrRoutes({ db, notifier, parentHelpers }).routes,
+    ...infoRoutes({ db, uploadsDir }).routes, ...securityRoutes({ db, notifier, dataDir }).routes);
   const limiter = createLoginLimiter();
 
   const server = http.createServer(async (req, res) => {
@@ -53,7 +63,8 @@ function createApp({ dbFile, dataDir, publicDir, cookieSecure = false, scheduler
         return res.end(html);
       }
       if (pathname.startsWith('/uploads/')) {
-        if (serveFile(res, uploadsDir, pathname.slice('/uploads/'.length), { 'Cache-Control': 'public, max-age=604800, immutable' }, req)) return;
+        const isDoc = /\.(pdf|docx?|xlsx?)$/.test(pathname);
+        if (serveFile(res, uploadsDir, pathname.slice('/uploads/'.length), { 'Cache-Control': 'public, max-age=604800, immutable', ...(isDoc ? { 'Content-Disposition': 'attachment' } : {}) }, req)) return;
         throw new HttpError(404, 'Не найдено');
       }
       const rel = pathname === '/' ? 'index.html' : pathname === '/checkin' ? 'checkin.html' : pathname.slice(1);
@@ -75,7 +86,7 @@ function createApp({ dbFile, dataDir, publicDir, cookieSecure = false, scheduler
   // Журнал действий: кто и что менял (содержимое запросов не сохраняем — там могут быть пароли)
   const AUDIT_LABELS = [['users', 'Сотрудники'], ['news', 'Новости'], ['announcements', 'Объявления'], ['media', 'Медиа'], ['pages', 'Страницы'],
     ['students', 'Ученики'], ['achievements', 'Достижения'], ['tasks', 'Поручения'], ['events', 'Календарь'], ['faq', 'Вопросы и ответы'],
-    ['applications', 'Заявки'], ['faces', 'Лица сотрудников'], ['checkins', 'Проверка по лицу'], ['face-settings', 'Настройки проверки по лицу'], ['settings', 'Настройки'], ['stats', 'Статистика'], ['attendance', 'Посещаемость'], ['holidays', 'Праздники'], ['lessons', 'Расписание']];
+    ['applications', 'Заявки'], ['faces', 'Лица сотрудников'], ['checkins', 'Проверка по лицу'], ['face-settings', 'Настройки проверки по лицу'], ['settings', 'Настройки'], ['stats', 'Статистика'], ['attendance', 'Посещаемость'], ['holidays', 'Праздники'], ['lessons', 'Расписание'], ['journal', 'Журнал'], ['homework', 'Домашние задания'], ['parents', 'Родители'], ['broadcasts', 'Рассылки'], ['appointments', 'Запись на приём'], ['certs', 'Справки'], ['feedback', 'Обращения'], ['leaves', 'Отпуска и больничные'], ['substitutions', 'Замены'], ['payroll', 'Премии и удержания'], ['menu', 'Меню столовой'], ['bells', 'Звонки'], ['transport', 'Подвоз'], ['documents', 'Документы'], ['security', 'Безопасность'], ['backups', 'Резервные копии'], ['backup-settings', 'Настройки копий'], ['school-settings', 'Настройки приёма']];
   const AUDIT_VERBS = { POST: 'добавил(а)/изменил(а)', PUT: 'изменил(а)', DELETE: 'удалил(а)' };
   function logAudit(user, method, pathname) {
     const seg = pathname.split('/')[2] || '';
@@ -108,6 +119,17 @@ function createApp({ dbFile, dataDir, publicDir, cookieSecure = false, scheduler
         return res.end(buf);
       } finally { fs.rmSync(tmp, { force: true }); }
     }
+    const bm = method === 'GET' && /^\/api\/backups\/(school-\d{8}-\d{6}\.sqlite)$/.exec(url.pathname);
+    if (bm) {
+      const who = A.userFromToken(db, parseCookies(req.headers.cookie)[COOKIE]);
+      if (!who || who.role !== 'director') throw new HttpError(403, 'Копии может скачать только директор');
+      const f = path.join(Backup.dirOf(dataDir), bm[1]);
+      if (!fs.existsSync(f)) throw new HttpError(404, 'Копия не найдена');
+      const buf = fs.readFileSync(f);
+      db.prepare('INSERT INTO audit_log (user_id, user_name, action, target) VALUES (?,?,?,?)').run(who.id, who.full_name, 'скачал(а) резервную копию', bm[1]);
+      res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': buf.length, 'Cache-Control': 'no-store', 'Content-Disposition': `attachment; filename="${bm[1]}"` });
+      return res.end(buf);
+    }
     let match = null;
     for (const r of routes) {
       if (r.method !== method) continue;
@@ -135,20 +157,22 @@ function createApp({ dbFile, dataDir, publicDir, cookieSecure = false, scheduler
     }
 
     const ip = req.socket.remoteAddress || '';
-    const isLogin = method === 'POST' && url.pathname === '/api/auth/login';
+    const isLogin = method === 'POST' && ['/api/auth/login', '/api/auth/verify', '/api/parent/login'].includes(url.pathname);
     if (isLogin && limiter.blocked(ip)) throw new HttpError(429, 'Слишком много попыток входа. Подождите 15 минут.');
 
     const body = mutating ? await readBody(req, url.pathname === '/api/upload' ? 9_000_000 : /^\/api\/(checkin\/finish|faces\/\d+)$/.test(url.pathname) ? 3_000_000 : 1_000_000) : {};
     const out = { cookies: [] };
     const cookieAttrs = `Path=/; HttpOnly; SameSite=Lax${cookieSecure ? '; Secure' : ''}`;
     const ctx = {
-      req, res, params: match.params, query: Object.fromEntries(url.searchParams), body, user,
+      req, res, cookies, params: match.params, query: Object.fromEntries(url.searchParams), body, user,
       setSession(userId, persistent = true) {
         A.destroySession(db, cookies[COOKIE]);
         const s = A.createSession(db, userId);
         // «Запомнить меня» выключено — cookie живёт до закрытия браузера
         out.cookies.push(`${COOKIE}=${s.token}; ${cookieAttrs}${persistent ? `; Expires=${new Date(s.expires).toUTCString()}` : ''}`);
       },
+      setCookie(name, value, { days = 30 } = {}) { out.cookies.push(`${name}=${value}; ${cookieAttrs}; Expires=${new Date(Date.now() + days * 86400_000).toUTCString()}`); },
+      clearCookie(name) { out.cookies.push(`${name}=; ${cookieAttrs}; Max-Age=0`); },
       clearSession() {
         A.destroySession(db, cookies[COOKIE]);
         out.cookies.push(`${COOKIE}=; ${cookieAttrs}; Max-Age=0`);
@@ -167,7 +191,13 @@ function createApp({ dbFile, dataDir, publicDir, cookieSecure = false, scheduler
   }
 
   let timer = null;
-  if (scheduler) { timer = setInterval(() => { try { runReminders(db, notifier); } catch (e) { console.error('[reminders]', e.message); } }, 30_000); timer.unref(); }
+  if (scheduler) {
+    timer = setInterval(() => {
+      try { runReminders(db, notifier); } catch (e) { console.error('[reminders]', e.message); }
+      Backup.runBackupIfDue(db, dataDir, notifier).catch((e) => console.error('[backup]', e.message));
+    }, 30_000);
+    timer.unref();
+  }
   return { server, db, notifier, engine, stopScheduler: () => clearInterval(timer) };
 }
 

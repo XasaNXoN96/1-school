@@ -2,6 +2,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
+const { SCHOOL_SCHEMA, SCHOOL_SETTINGS } = require('./school-schema');
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -315,6 +316,7 @@ function openDb(file) {
   const db = new DatabaseSync(file);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
   db.exec(SCHEMA);
+  db.exec(SCHOOL_SCHEMA);
   // Миграции для баз, созданных по более ранней схеме
   const addColumn = (table, col, def) => {
     if (!db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
@@ -327,11 +329,16 @@ function openDb(file) {
   addColumn('attendance', 'face_distance', 'REAL');
   addColumn('attendance', 'review', "TEXT NOT NULL DEFAULT ''");
   addColumn('attendance', 'attempt_id', 'INTEGER');
+  addColumn('students', 'parent_name', "TEXT NOT NULL DEFAULT ''");
+  addColumn('students', 'parent_phone', "TEXT NOT NULL DEFAULT ''");
+  addColumn('students', 'parent_code', "TEXT NOT NULL DEFAULT ''");
+  addColumn('students', 'parent_telegram_id', "TEXT NOT NULL DEFAULT ''");
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS students_pcode ON students (parent_code) WHERE parent_code != ''");
   addColumn('media', 'tour', "TEXT NOT NULL DEFAULT ''");
   addColumn('media', 'kind', "TEXT NOT NULL DEFAULT 'photo'");
   for (const c of ['image', 'video', 'audio', 'video_url']) addColumn('pages', c, "TEXT NOT NULL DEFAULT ''");
   const ins = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
-  for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) ins.run(k, v);
+  for (const [k, v] of Object.entries({ ...DEFAULT_SETTINGS, ...SCHOOL_SETTINGS })) ins.run(k, v);
   const insPage = db.prepare('INSERT OR IGNORE INTO pages (slug, title, body, sort) VALUES (?,?,?,?)');
   for (const p of DEFAULT_PAGES) insPage.run(...p);
   return db;
