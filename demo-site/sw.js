@@ -1,7 +1,7 @@
 // Сервис-воркер: сайт открывается как приложение, а оболочка (HTML/CSS/JS) работает и без интернета.
 // Данные (/api) всегда берутся из сети; если сети нет — показывается последняя сохранённая копия публичных страниц.
 const CACHE = 'school-v1';
-const SHELL = ['/', '/css/theme.css', '/css/site.css', '/js/prefs.js', '/js/site.js', '/js/common.js', '/js/i18n.js', '/js/icons.js', '/img/logo.svg', '/img/hero.jpg', '/img/avatar.svg'];
+const SHELL = ['/', '/css/theme.css', '/css/site.css', '/js/prefs.js', '/js/site.js', '/js/common.js', '/js/i18n.js', '/js/icons.js', '/img/logo.svg', '/img/hero.jpg', '/img/avatar.svg', '/img/admission.jpg'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => { e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', (e) => {
