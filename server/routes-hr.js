@@ -100,7 +100,7 @@ function hrRoutes({ db, notifier, parentHelpers }) {
     for (const t of teachers) {
       if (!t.work_days.split(',').map(Number).includes(wd)) continue;
       if (one("SELECT 1 x FROM leave_requests WHERE user_id=? AND status='approved' AND date_from<=? AND date_to>=?", t.id, d, d)) continue;
-      const own = all('SELECT start_time, end_time FROM lessons WHERE teacher_id=? AND weekday=?', t.id, wd);
+      const own = all("SELECT start_time, end_time FROM lessons WHERE teacher_id=? AND weekday=? AND status='published'", t.id, wd);
       if (own.some((o) => overlap(o.start_time, o.end_time, lesson.start_time, lesson.end_time))) continue;
       const subs = all('SELECT l.start_time, l.end_time FROM substitutions s JOIN lessons l ON l.id=s.lesson_id WHERE s.sub_user_id=? AND s.date=? AND s.lesson_id != ?', t.id, d, lesson.id);
       if (subs.some((o) => overlap(o.start_time, o.end_time, lesson.start_time, lesson.end_time))) continue;
@@ -111,7 +111,7 @@ function hrRoutes({ db, notifier, parentHelpers }) {
 
   get('/api/substitutions/suggest', 'manager', ({ query }) => {
     const t = person(V.int(query.teacher_id, 0, 1)), d = V.date(query.date);
-    const lessons = all(`${LESSON_SQL} WHERE l.teacher_id=? AND l.weekday=? ORDER BY l.start_time`, t.id, V.weekdayOf(d));
+    const lessons = all(`${LESSON_SQL} WHERE l.teacher_id=? AND l.weekday=? AND l.status='published' ORDER BY l.start_time`, t.id, V.weekdayOf(d));
     const onLeave = !!one("SELECT 1 x FROM leave_requests WHERE user_id=? AND status='approved' AND date_from<=? AND date_to>=?", t.id, d, d);
     return { teacher: t.full_name, date: d, on_leave: onLeave, lessons: lessons.map((l) => ({ ...l, substitution: one(`${SUB_SQL} WHERE s.date=? AND s.lesson_id=?`, d, l.id) || null, candidates: candidates(l, d) })) };
   });

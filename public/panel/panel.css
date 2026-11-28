@@ -211,3 +211,16 @@ html[data-theme="dark"]:root {
   body.printing > *:not(.print-sheet) { display: none !important; }
   body.printing .print-sheet { display: block !important; color: #000; background: #fff; padding: 16px; font-size: 14px; }
 }
+
+/* ---- сетка расписания учителя ---- */
+.tt-grid { width: 100%; border-collapse: separate; border-spacing: 6px; table-layout: fixed; min-width: 720px; }
+.tt-grid th { font-weight: 600; text-align: center; padding: 6px; } .tt-grid th small { display: block; color: #667; font-weight: 400; }
+.tt-grid td { height: 76px; padding: 0; vertical-align: stretch; }
+.tt-add { width: 100%; height: 100%; min-height: 70px; border: 1px dashed #b8c2d6; border-radius: 12px; background: transparent; color: #3a62d6; cursor: pointer; }
+.tt-add:hover { background: #eef3ff; }
+.tt-lesson { position: relative; width: 100%; height: 100%; min-height: 70px; border-radius: 12px; border: 1px solid transparent; text-align: left; padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; cursor: pointer; background: #e9eef9; color: #1b2a4a; }
+.tt-lesson.published { background: #dbe7ff; } .tt-lesson.pending { background: #fff3cf; } .tt-lesson.draft { background: #f1f1f4; border-style: dashed; border-color: #aab; }
+.tt-lesson.del { opacity: .55; text-decoration: line-through; }
+.tt-lesson span, .tt-lesson small { font-size: .85rem; } .tt-lesson .dot { position: absolute; right: 8px; top: 8px; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #aaa; } .dot.ok { background: #2c9a5a; } .dot.warn { background: #9aa0ad; } .dot.info { background: #e0a400; } .dot.bad { background: #d33; }
+.tt-legend { gap: 18px; font-size: .9rem; margin: 8px 0; } .tt-info { margin-top: 10px; display: grid; gap: 6px; }

@@ -61,7 +61,7 @@ function journalRoutes({ db, notifier }) {
     for (const a of att) counts[a.status]++;
     const homework = all('SELECT id, subject, text, due_date FROM homework WHERE lower(trim(class_name))=lower(trim(?)) AND due_date>=? AND due_date<=? ORDER BY due_date, id', st.class_name, V.addDays(t, -1), V.addDays(t, 14));
     const schedule = all(`SELECT l.weekday, l.number, l.subject, l.room, l.start_time, l.end_time, u.full_name AS teacher FROM lessons l JOIN users u ON u.id=l.teacher_id
-      WHERE lower(trim(l.class_name))=lower(trim(?)) ORDER BY l.weekday, l.start_time`, st.class_name);
+      WHERE l.status='published' AND lower(trim(l.class_name))=lower(trim(?)) ORDER BY l.weekday, l.start_time`, st.class_name);
     const messages = all('SELECT id, kind, text, created_at FROM parent_messages WHERE student_id=? ORDER BY id DESC LIMIT 40', st.id);
     const certs = all('SELECT id, kind, purpose, status, note, created_at FROM cert_requests WHERE student_id=? ORDER BY id DESC LIMIT 20', st.id);
     return { student: { id: st.id, full_name: st.full_name, class_name: st.class_name, photo: st.photo, telegram_linked: !!st.parent_telegram_id },
@@ -96,9 +96,9 @@ function journalRoutes({ db, notifier }) {
   get('/api/journal/meta', 'auth', ({ user }) => {
     teaching(user);
     const classes = all("SELECT DISTINCT class_name FROM students WHERE active=1 AND class_name != ''").map((r) => r.class_name).sort(natural);
-    const subj = new Set([...all("SELECT DISTINCT subject FROM lessons WHERE subject != ''").map((r) => r.subject),
+    const subj = new Set([...all("SELECT DISTINCT subject FROM lessons WHERE status='published' AND subject != ''").map((r) => r.subject),
       ...all("SELECT DISTINCT subject FROM users WHERE active=1 AND subject != ''").map((r) => r.subject)]);
-    const mine = all("SELECT DISTINCT class_name, subject FROM lessons WHERE teacher_id=? AND class_name != ''", user.id);
+    const mine = all("SELECT DISTINCT class_name, subject FROM lessons WHERE status='published' AND teacher_id=? AND class_name != ''", user.id);
     return { classes, subjects: [...subj].sort(natural), mine, kinds: KINDS, today: today() };
   });
 

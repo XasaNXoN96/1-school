@@ -489,3 +489,53 @@ test('резервные копии: ручная, по расписанию, х
   assert.equal(await runBackupIfDue(app.db, app.dataDir, app.notifier, new Date(Date.now() + 99 * 3600_000)), null);
   assert.equal((await dir('PUT', '/api/backup-settings', { backup_hours: 0 })).status, 400);
 });
+
+test('расписание учителя: черновик → проверка → публикация; конфликты; ученики видят только опубликованное', async (t) => {
+  const { app, sent, dir, mk, login } = await boot(); t.after(app.close);
+  const ann = await mk('teacher', 'ann'), bob = await mk('teacher', 'bob');
+  const s = (await dir('POST', '/api/students', { full_name: 'Алиев Али', class_name: '5-A' })).data; await dir('POST', '/api/parents/generate-codes');
+  const code = (await dir('GET', '/api/parents')).data.students.find((p) => p.id === s.id).parent_code;
+  const a = await login('ann'), b = await login('bob');
+  const L = { weekday: 2, number: 1, subject: 'Математика', class_name: '5-A', room: '12' };
+  // «+» в пустой ячейке: сначала смотрим, что уже стоит в это время
+  assert.equal((await a('GET', '/api/timetable/check?weekday=2&number=1&room=12&class_name=5-A')).data.same_slot.length, 0);
+  const r1 = await a('POST', '/api/timetable', L); assert.equal(r1.status, 200); assert.equal(r1.data.lesson.status, 'draft');
+  // свой урок в то же время и пустые поля — ошибка
+  assert.equal((await a('POST', '/api/timetable', { ...L, room: '13', class_name: '6-A' })).status, 409);
+  assert.equal((await a('POST', '/api/timetable', { ...L, room: '' })).status, 400);
+  // черновик никто не видит: ни админ, ни родитель, ни другой учитель
+  assert.equal((await dir('GET', '/api/lessons')).data.length, 0);
+  assert.equal((await b('GET', '/api/timetable/check?weekday=2&number=1&room=12')).data.same_slot.length, 0);
+  // отправка на проверку
+  assert.equal((await a('POST', '/api/timetable/submit')).status, 200);
+  assert.equal((await a('POST', '/api/timetable/submit')).status, 400);
+  assert.equal((await dir('GET', '/api/panel/dashboard')).data.attention.timetable, 1);
+  // другой учитель видит, что кабинет занят (на проверке), и не может его занять; класс — только предупреждение
+  const chk = (await b('GET', '/api/timetable/check?weekday=2&number=1&room=12&class_name=5-A')).data;
+  assert.equal(chk.same_slot.length, 1); assert.equal(chk.errors.length, 1);
+  assert.equal((await b('POST', '/api/timetable', { ...L, subject: 'Физика' })).status, 409);
+  const w = await b('POST', '/api/timetable', { ...L, subject: 'Физика', room: '14' }); assert.equal(w.status, 200); assert.equal(w.data.warnings.length, 1);
+  // родитель пока ничего не видит
+  const p = app.client(); await p('POST', '/api/parent/login', { code });
+  assert.equal((await p('GET', `/api/parent/overview?student_id=${s.id}`)).data.schedule.length, 0);
+  // отказ возвращает в черновик с комментарием, повторная отправка и одобрение
+  const rev = (await dir('GET', '/api/timetable/review')).data; assert.equal(rev.length, 1); assert.equal(rev[0].add.length, 1);
+  assert.equal((await dir('POST', '/api/timetable/decision', { teacher_id: ann.id, approve: false, note: 'Исправьте кабинет' })).status, 200);
+  assert.equal((await a('GET', '/api/timetable')).data.lessons[0].status, 'draft'); assert.equal((await a('GET', '/api/timetable')).data.lessons[0].note, 'Исправьте кабинет');
+  await a('POST', '/api/timetable/submit');
+  assert.equal((await b('POST', '/api/timetable/decision', { teacher_id: ann.id, approve: true })).status, 403);
+  assert.equal((await dir('POST', '/api/timetable/decision', { teacher_id: ann.id, approve: true })).status, 200);
+  assert.equal((await p('GET', `/api/parent/overview?student_id=${s.id}`)).data.schedule.length, 1);
+  assert.equal((await dir('GET', '/api/lessons')).data.length, 1);
+  // опубликованный урок нельзя править, удаление — запрос, проверка админом
+  const id = (await a('GET', '/api/timetable')).data.lessons[0].id;
+  assert.equal((await a('PUT', `/api/timetable/${id}`, { ...L, room: '99' })).status, 400);
+  assert.equal((await a('DELETE', `/api/timetable/${id}`)).data.del_req, 1);
+  assert.equal((await p('GET', `/api/parent/overview?student_id=${s.id}`)).data.schedule.length, 1);
+  assert.equal((await a('POST', '/api/timetable/submit')).status, 200);
+  await dir('POST', '/api/timetable/decision', { teacher_id: ann.id, approve: true });
+  assert.equal((await p('GET', `/api/parent/overview?student_id=${s.id}`)).data.schedule.length, 0);
+  // чужой урок трогать нельзя
+  const bid = (await b('GET', '/api/timetable')).data.lessons[0].id;
+  assert.equal((await a('DELETE', `/api/timetable/${bid}`)).status, 404);
+});

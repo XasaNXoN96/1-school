@@ -113,7 +113,7 @@ function createBot({ db, notifier, api, now = () => new Date(), publicUrl = '' }
 
   function lessonsText(u) {
     const t = localNow(now(), getSettings(db).timezone);
-    const rows = db.prepare('SELECT * FROM lessons WHERE teacher_id = ? AND weekday = ? ORDER BY start_time').all(u.id, t.weekday);
+    const rows = db.prepare("SELECT * FROM lessons WHERE teacher_id = ? AND weekday = ? AND status = 'published' ORDER BY start_time").all(u.id, t.weekday);
     if (!rows.length) return '📚 Сегодня уроков нет.';
     return `📚 Уроки сегодня (${rows.length}):\n` + rows.map((l) => `${l.start_time}–${l.end_time}  ${l.class_name ? l.class_name + ' — ' : ''}${l.subject}${l.room ? ' (каб. ' + l.room + ')' : ''}`).join('\n');
   }

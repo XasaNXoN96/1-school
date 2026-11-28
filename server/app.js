@@ -15,6 +15,7 @@ const { createFaceEngine } = require('./face');
 const { journalRoutes } = require('./routes-journal');
 const { requestRoutes } = require('./routes-requests');
 const { hrRoutes } = require('./routes-hr');
+const { timetableRoutes } = require('./routes-timetable');
 const { infoRoutes } = require('./routes-info');
 const { securityRoutes } = require('./routes-security');
 const Backup = require('./backup');
@@ -44,7 +45,7 @@ function createApp({ dbFile, dataDir, publicDir, cookieSecure = false, scheduler
   routes.push(...faceRoutes({ db, notifier, engine, botToken, publicUrl }));
   const journal = journalRoutes({ db, notifier });
   const parentHelpers = { notifyParents: journal.notifyParents, notifyClass: journal.notifyClass };
-  routes.push(...journal.routes, ...requestRoutes({ db, notifier, parentHelpers }).routes, ...hrRoutes({ db, notifier, parentHelpers }).routes,
+  routes.push(...journal.routes, ...requestRoutes({ db, notifier, parentHelpers }).routes, ...hrRoutes({ db, notifier, parentHelpers }).routes, ...timetableRoutes({ db, notifier }).routes,
     ...infoRoutes({ db, uploadsDir }).routes, ...securityRoutes({ db, notifier, dataDir }).routes);
   const limiter = createLoginLimiter();
 
@@ -86,7 +87,7 @@ function createApp({ dbFile, dataDir, publicDir, cookieSecure = false, scheduler
   // Журнал действий: кто и что менял (содержимое запросов не сохраняем — там могут быть пароли)
   const AUDIT_LABELS = [['users', 'Сотрудники'], ['news', 'Новости'], ['announcements', 'Объявления'], ['media', 'Медиа'], ['pages', 'Страницы'],
     ['students', 'Ученики'], ['achievements', 'Достижения'], ['tasks', 'Поручения'], ['events', 'Календарь'], ['faq', 'Вопросы и ответы'],
-    ['applications', 'Заявки'], ['faces', 'Лица сотрудников'], ['checkins', 'Проверка по лицу'], ['face-settings', 'Настройки проверки по лицу'], ['settings', 'Настройки'], ['stats', 'Статистика'], ['attendance', 'Посещаемость'], ['holidays', 'Праздники'], ['lessons', 'Расписание'], ['journal', 'Журнал'], ['homework', 'Домашние задания'], ['parents', 'Родители'], ['broadcasts', 'Рассылки'], ['appointments', 'Запись на приём'], ['certs', 'Справки'], ['feedback', 'Обращения'], ['leaves', 'Отпуска и больничные'], ['substitutions', 'Замены'], ['payroll', 'Премии и удержания'], ['menu', 'Меню столовой'], ['bells', 'Звонки'], ['transport', 'Подвоз'], ['documents', 'Документы'], ['security', 'Безопасность'], ['backups', 'Резервные копии'], ['backup-settings', 'Настройки копий'], ['school-settings', 'Настройки приёма']];
+    ['applications', 'Заявки'], ['faces', 'Лица сотрудников'], ['checkins', 'Проверка по лицу'], ['face-settings', 'Настройки проверки по лицу'], ['settings', 'Настройки'], ['stats', 'Статистика'], ['attendance', 'Посещаемость'], ['holidays', 'Праздники'], ['lessons', 'Расписание'], ['timetable', 'Расписание учителя'], ['journal', 'Журнал'], ['homework', 'Домашние задания'], ['parents', 'Родители'], ['broadcasts', 'Рассылки'], ['appointments', 'Запись на приём'], ['certs', 'Справки'], ['feedback', 'Обращения'], ['leaves', 'Отпуска и больничные'], ['substitutions', 'Замены'], ['payroll', 'Премии и удержания'], ['menu', 'Меню столовой'], ['bells', 'Звонки'], ['transport', 'Подвоз'], ['documents', 'Документы'], ['security', 'Безопасность'], ['backups', 'Резервные копии'], ['backup-settings', 'Настройки копий'], ['school-settings', 'Настройки приёма']];
   const AUDIT_VERBS = { POST: 'добавил(а)/изменил(а)', PUT: 'изменил(а)', DELETE: 'удалил(а)' };
   function logAudit(user, method, pathname) {
     const seg = pathname.split('/')[2] || '';

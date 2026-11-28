@@ -321,6 +321,9 @@ function openDb(file) {
   const addColumn = (table, col, def) => {
     if (!db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
   };
+  addColumn('lessons', 'status', "TEXT NOT NULL DEFAULT 'published'");
+  addColumn('lessons', 'del_req', 'INTEGER NOT NULL DEFAULT 0');
+  addColumn('lessons', 'note', "TEXT NOT NULL DEFAULT ''");
   addColumn('news', 'kind', "TEXT NOT NULL DEFAULT 'news'");
   addColumn('users', 'frozen', 'INTEGER NOT NULL DEFAULT 0');
   addColumn('users', 'last_seen', 'TEXT');

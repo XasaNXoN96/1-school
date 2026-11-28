@@ -51,6 +51,19 @@
     if (path === '/api/parent/login') { let b = {}; try { b = JSON.parse(opts.body); } catch {} if (String(b.code || '').trim().toUpperCase() !== 'DEMO2345') return J({ error: 'Код не найден. Для демо используйте DEMO2345' }, 401); try { sessionStorage.setItem('demo_parent', '1'); } catch {} return J({ ok: true, student_id: 1 }); }
     if (path === '/api/parent/logout') { try { sessionStorage.removeItem('demo_parent'); } catch {} return J({ ok: true }); }
     if (method === 'GET' && path.startsWith('/api/parent/')) { let on = false; try { on = !!sessionStorage.getItem('demo_parent'); } catch {} if (!on) return J({ error: 'Войдите по коду родителя' }, 401); }
+    if (path.startsWith('/api/timetable') && path !== '/api/timetable/review') { // демо: изменения живут только в этой вкладке
+      const ld = () => { try { return JSON.parse(sessionStorage.getItem('demo_tt') || '[]'); } catch { return []; } }, sv = (v) => { try { sessionStorage.setItem('demo_tt', JSON.stringify(v)); } catch {} };
+      const base = ((d.users[cur()] || {}).map || {})['/api/timetable'] || { lessons: [], bells: [] };
+      let b = {}; try { b = JSON.parse(opts.body || '{}'); } catch {}
+      const ex = ld(); let all = base.lessons.map((l) => ({ ...l, ...(ex.find((x) => x.id === l.id && x.patch) || {}).patch }));
+      const mine = ex.filter((x) => !x.patch && !x.id_del);
+      if (method === 'GET' && path === '/api/timetable') return J({ ...base, lessons: [...all.filter((l) => !ex.some((x) => x.id_del === l.id)), ...mine] });
+      if (method === 'GET' && path === '/api/timetable/check') { const q = new URLSearchParams(u.split('?')[1] || ''); return J({ same_slot: [], errors: [], warnings: [], start_time: ((base.bells.find((x) => x.number === +q.get('number') && x.shift === 1)) || {}).start_time || '08:00', end_time: '' }); }
+      if (method === 'POST' && path === '/api/timetable') { const bell = base.bells.find((x) => x.number === +b.number && x.shift === 1) || {}; const l = { id: 9000 + ex.length, teacher_id: 0, weekday: +b.weekday, number: +b.number, subject: b.subject, class_name: b.class_name, room: b.room, start_time: bell.start_time || '08:00', end_time: bell.end_time || '08:45', status: 'draft', del_req: 0, note: '' }; sv([...ex, l]); return J({ lesson: l, warnings: [] }); }
+      if (method === 'POST' && path === '/api/timetable/submit') { sv(ex.map((x) => (x.status === 'draft' ? { ...x, status: 'pending' } : x))); return J({ ok: true }); }
+      if (method === 'DELETE') { const id = +path.split('/').pop(); const m = ex.find((x) => x.id === id); if (m) { sv(ex.filter((x) => x.id !== id)); return J({ ok: true, removed: true }); } sv([...ex, { id_del: id }]); return J({ ok: true, del_req: 1 }); }
+      return J({ ok: true, demo: true });
+    }
     if (method !== 'GET') return J({ ok: true, demo: true });
     if (path === '/api/auth/me') { const r = d.users[cur()]; return r ? J(r.user) : J({ error: 'Требуется вход' }, 401); }
     if (d.public[path] !== undefined) {

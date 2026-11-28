@@ -4,6 +4,7 @@ import './views2.js';
 import './views3.js';
 import './views4.js';
 import './views5.js';
+import './views6.js';
 import { lang, setLang, LANGS } from '/js/i18n.js';
 
 const app = document.getElementById('app');
@@ -11,7 +12,7 @@ const logo = (size = 44) => h('img', { src: '/img/logo.svg', alt: '', width: siz
 
 const MENU_MANAGER = [['dashboard', 'Главная', 'home'], ['stats', 'Статистика', 'trend'], ['users', 'Пользователи', 'users'], ['calendar', 'Календарь', 'calendar'], ['applications', 'Заявки с сайта', 'mail'], ['lessons', 'Расписание уроков', 'clock'], ['tasks', 'Поручения', 'clipboard'], ['students', 'Ученики', 'cap'],
   ['news', 'Новости', 'news'], ['announcements', 'Объявления', 'megaphone'], ['media', 'Медиа (фото/видео)', 'image'], ['pages', 'О школе', 'book'], ['achievements', 'Достижения', 'trophy'], ['reports', 'Отчёты', 'chart'], ['faq', 'Вопросы и ответы', 'help'], ['faceid', 'Проверка по лицу', 'camera'], ['journal', 'Журнал и оценки', 'book'], ['parents', 'Родители и рассылки', 'message'], ['requests', 'Приём, справки, обращения', 'doc'], ['hr', 'Кадры и зарплата', 'briefcase'], ['subs', 'Замены уроков', 'repeat'], ['info', 'Меню, звонки, документы', 'utensils'], ['security', 'Безопасность', 'key'], ['audit', 'Журнал действий', 'shield'], ['settings', 'Настройки', 'settings']];
-const MENU_STAFF = [['dashboard', 'Главная', 'home'], ['lessons', 'Мои уроки', 'book'], ['calendar', 'Календарь', 'calendar'], ['tasks', 'Задания', 'clipboard'], ['students', 'Ученики', 'cap'], ['achievements', 'Достижения', 'trophy'],
+const MENU_STAFF = [['dashboard', 'Главная', 'home'], ['lessons', 'Моё расписание', 'book'], ['calendar', 'Календарь', 'calendar'], ['tasks', 'Задания', 'clipboard'], ['students', 'Ученики', 'cap'], ['achievements', 'Достижения', 'trophy'],
   ['attendance', 'Посещаемость', 'check'], ['mycheck', 'Моя отметка', 'camera'], ['journal', 'Журнал и оценки', 'book'], ['requests', 'Приём и обращения', 'doc'], ['subs', 'Замены уроков', 'repeat'], ['leave', 'Отпуск и больничный', 'briefcase'], ['payslip', 'Расчётный листок', 'wallet'], ['salary', 'Зарплата', 'chart'], ['messages', 'Сообщения', 'mail'], ['announcements', 'Объявления', 'megaphone'], ['plans', 'Мои планы', 'clock'], ['profile', 'Профиль', 'user']];
 
 const roleLabel = (r) => ({ director: T('Администратор'), assistant: T('Ассистент'), teacher: T('Учитель'), staff: T('Сотрудник') }[r]);

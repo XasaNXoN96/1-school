@@ -238,6 +238,7 @@ function buildRoutes({ db, notifier, uploadsDir }) {
         appointments: one("SELECT COUNT(*) c FROM appointments WHERE status='new'").c,
         certs: one("SELECT COUNT(*) c FROM cert_requests WHERE status='new'").c,
         feedback: one("SELECT COUNT(*) c FROM feedback WHERE status='new'").c,
+        timetable: one("SELECT COUNT(DISTINCT teacher_id) c FROM lessons WHERE status='pending' OR del_req=1").c,
       };
       out.new_applications = one("SELECT COUNT(*) c FROM applications WHERE status='new'").c;
       out.pending_achievements = one("SELECT COUNT(*) c FROM achievements WHERE status='pending'").c;
@@ -253,9 +254,9 @@ function buildRoutes({ db, notifier, uploadsDir }) {
     } else {
       const r = one('SELECT * FROM attendance WHERE user_id=? AND date=?', user.id, t.date);
       out.my_today = r ? { status: r.status, check_in: r.check_in?.slice(11, 16) ?? null, check_out: r.check_out?.slice(11, 16) ?? null, late_minutes: r.late_minutes } : null;
-      out.lessons_today = all('SELECT * FROM lessons WHERE teacher_id=? AND weekday=? ORDER BY start_time', user.id, t.weekday);
+      out.lessons_today = all('SELECT * FROM lessons WHERE teacher_id=? AND weekday=? AND status=\'published\' ORDER BY start_time', user.id, t.weekday);
       out.counts = {
-        lessons_week: one('SELECT COUNT(*) c FROM lessons WHERE teacher_id=?', user.id).c,
+        lessons_week: one('SELECT COUNT(*) c FROM lessons WHERE teacher_id=? AND status=\'published\'', user.id).c,
         students: one('SELECT COUNT(*) c FROM students WHERE active=1').c,
         achievements: one("SELECT COUNT(*) c FROM achievements WHERE created_by=? OR user_id=?", user.id, user.id).c,
       };
@@ -633,8 +634,8 @@ function buildRoutes({ db, notifier, uploadsDir }) {
   };
   const LESSON_SQL = 'SELECT l.*, u.full_name AS teacher_name FROM lessons l JOIN users u ON u.id = l.teacher_id';
   get('/api/lessons', 'auth', ({ user, query }) => {
-    if (A.isManager(user)) return query.teacher_id ? all(`${LESSON_SQL} WHERE l.teacher_id=? ORDER BY l.weekday, l.start_time`, int(query.teacher_id, 0, 1))
-      : all(`${LESSON_SQL} ORDER BY u.full_name, l.weekday, l.start_time`);
+    if (A.isManager(user)) return query.teacher_id ? all(`${LESSON_SQL} WHERE l.teacher_id=? AND l.status != 'draft' ORDER BY l.weekday, l.start_time`, int(query.teacher_id, 0, 1))
+      : all(`${LESSON_SQL} WHERE l.status != 'draft' ORDER BY u.full_name, l.weekday, l.start_time`);
     return all(`${LESSON_SQL} WHERE l.teacher_id=? ORDER BY l.weekday, l.start_time`, user.id);
   });
   post('/api/lessons', 'manager', ({ body }) => {

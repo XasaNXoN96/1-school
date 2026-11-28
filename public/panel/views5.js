@@ -249,7 +249,7 @@ views.dashboard = async () => {
   if (isManager()) {
     const d = await api('GET', '/api/panel/dashboard').catch(() => ({}));
     const a = d.attention || {};
-    const links = [['leaves', 'Заявок на отпуск', '#/hr'], ['appointments', 'Записей на приём', '#/requests'], ['certs', 'Заявок на справки', '#/requests'], ['feedback', 'Новых обращений', '#/requests']].filter(([k]) => a[k]);
+    const links = [['leaves', 'Заявок на отпуск', '#/hr'], ['timetable', 'Расписаний на проверке', '#/lessons'], ['appointments', 'Записей на приём', '#/requests'], ['certs', 'Заявок на справки', '#/requests'], ['feedback', 'Новых обращений', '#/requests']].filter(([k]) => a[k]);
     if (links.length) el.prepend(h('div', { class: 'alert' }, icon('bell', 18), h('b', {}, `${T('Требует внимания')}: `), links.map(([k, label, href], i) => h('span', {}, i ? ' · ' : '', h('a', { href }, `${T(label)}: ${a[k]}`)))));
   }
   return el;
